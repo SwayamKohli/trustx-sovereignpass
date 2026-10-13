@@ -85,12 +85,12 @@ Detailed specifications and implementation guides are available in the [`docs/`]
 
 ## Team Role Responsibilities
 
-| Role | Title | Primary Focus | Key Deliverables |
-| :--- | :--- | :--- | :--- |
-| **Role 1** | Security Lead & Attack/Defense Engineer | Threat modeling & attack automation | Controlled phishing site (`b4nk-secure.local`), `test_attacks.ts` suite, STRIDE threat model, judge Q&A defense. |
-| **Role 2** | Product, UI/UX & Admin SOC Lead | Frontend presentation & operational view | React 18 UI, accessible prompts, QR login modal, Admin SOC event log, presentation deck. |
-| **Role 3** | Core Backend & Identity Lifecycle Lead | WebAuthn engine & state management | `@simplewebauthn` integration, Argon2id recovery codes, server-side session invalidation, SQLite schema. |
-| **Role 4** | Systems Integration & AI/Crypto Lead | Capability gateway & benchmarks | Challenge-bound AI delegation tokens, prompt-injection attack script, NIST FIPS 204 benchmark script. |
+| Role | Member | Title | Primary Focus | Key Deliverables |
+| :--- | :--- | :--- | :--- | :--- |
+| **Role 1** | **Adnan** | Security Lead & Attack/Defense Engineer | Threat modeling & attack automation | Controlled phishing site (`b4nk-secure.local`), `test_attacks.ts` suite, STRIDE threat model, judge Q&A defense. |
+| **Role 2** | **Ananya** | Product, UI/UX & Admin SOC Lead | Frontend presentation & operational view | React 18 UI, accessible prompts, QR login modal, Admin SOC event log, presentation deck. |
+| **Role 3** | **Sanchit** | Core Backend & Identity Lifecycle Lead | WebAuthn engine & state management | `@simplewebauthn` integration, Argon2id recovery codes, server-side session invalidation, SQLite schema. |
+| **Role 4** | **Swayam** | Systems Integration & AI/Crypto Lead | Capability gateway & benchmarks | Challenge-bound AI delegation tokens, prompt-injection attack script, NIST FIPS 204 benchmark script. |
 
 ---
 
