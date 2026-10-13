@@ -141,20 +141,22 @@ Set up a clean TypeScript monorepo in the project root:
 ```
 
 ### Hours 00:00 - 04:00 | Core Polish & Account Recovery Engine (Sprint 1)
-* **Lead:** Role 3 (Backend) & Role 2 (Frontend)
+* **Lead:** Role 3 (Sanchit - Backend) & Role 2 (Ananya - Frontend)
 * **Milestones:**
-  1. Frontend: High-contrast, clean UI screens for Login, Registration, and Recovery.
+  1. Frontend: High-contrast, clean UI screens for Login, Registration, and Recovery designed with reference to WCAG 2.1 AA accessibility guidelines.
   2. Implement Recovery Code Generation:
      * Generate 8 single-use high-entropy codes (e.g., `A9F2-K891-M42L`). Display in modal with "Download Codes" option.
      * Store codes strictly as **Argon2id hashes** with salt.
-     * Document that recovery codes are sensitive bearer secrets (must be kept offline; protected server-side by atomic consumption and rate-limiting).
-  3. Build `POST /api/recovery/verify-code`: Validates code against Argon2id hash, marks `consumed = true` atomically, triggers replacement passkey enrollment, and marks lost device `status = 'REVOKED'`.
+     * Document that recovery codes are sensitive bearer secrets (must be kept offline; protected server-side by rate-limiting).
+  3. Safe Two-Phase Atomic Recovery (Lockout Prevention):
+     * *Phase 1 (`POST /api/recovery/verify-code`):* Validate code against Argon2id hash. Issue a temporary, short-lived (5m) recovery ticket. **Do not permanently burn the code yet.**
+     * *Phase 2 (`POST /api/recovery/complete`):* User enrolls replacement passkey on the new machine. Only upon **successful verification of the new passkey**, atomically mark recovery code `consumed = true`, mark lost credential `status = 'REVOKED'`, and terminate all old sessions.
   4. Test Case: Attempting to reuse an already-consumed recovery code fails immediately (`400 Bad Request`).
 
 ---
 
 ### Hours 04:00 - 08:00 | Multi-Device Management, Kiosk Mode & Phishing Lab (Sprint 2)
-* **Lead:** Role 1 (Security Lead) & Role 3 (Backend)
+* **Lead:** Role 1 (Adnan - Security Lead) & Role 3 (Sanchit - Backend)
 * **Milestones:**
   1. Multi-Device Enrollment: "Register New Device" button in dashboard requiring step-up authentication using active credential.
   2. Server-Side Session Invalidation:
@@ -162,27 +164,27 @@ Set up a clean TypeScript monorepo in the project root:
      * Protected API middleware checks session active status; invalidated sessions return `401 Unauthorized`.
   3. Shared-Device Kiosk Mode:
      * Public PC screen displays dynamic QR challenge (`/api/kiosk/qr-challenge`).
-     * Smartphone scans QR, user approves with biometrics.
+     * Smartphone scans QR (via tunnel configured with matching RP ID / origin or native FIDO caBLE), user approves with biometrics.
      * Public PC receives a 15-minute ephemeral server session. Server invalidates session after 15 minutes or upon logout.
   4. Phishing Demonstration Setup:
      * Finalize `https://b4nk-secure.local:3001` look-alike page.
-     * Prepare side-by-side demonstration showing password interception on legacy site vs passkey origin isolation on genuine site.
+     * Two-layer defense test: browser refuses to offer passkey on look-alike domain, and backend independently rejects mismatched origin assertions.
 
 ---
 
 ### Hours 08:00 - 12:00 | AI-Agent Capability Delegation Gateway (Sprint 3 — Optional Extension)
-* **Lead:** Role 4 (AI/Systems Lead)
+* **Lead:** Role 4 (Swayam - AI/Systems Lead)
 * **Milestones:**
-  1. Server Challenge Binding:
+  1. Server Structured Intent Binding:
      * Passkey does not directly sign raw transaction data; it authorizes a server-bound challenge.
-     * Backend constructs authentication challenge embedding transaction parameters:
-       $$\text{challenge} = \text{SHA-256}(\text{user\_id} + \text{"POST /api/v1/payments"} + \text{"TataPower"} + 1800 + \text{nonce})$$
+     * Server creates pending record in `delegation_intents` with canonical parameters: `{ intent_id, action, recipient, max_amount, nonce, expires_at }`.
+     * Backend constructs authentication challenge cryptographically bound to the stored intent.
      * User authorizes challenge via biometric prompt in a standard WebAuthn ceremony.
   2. Capability Token Minting:
-     * Server verifies assertion against challenge and issues signed HMAC-SHA256 capability token:
-       `{ action, recipient, max_amount: 2000, expires_at, nonce }`
+     * Server verifies assertion against challenge and issues signed HMAC-SHA256 capability token bound to the approved intent:
+       `{ intent_id, action, recipient, max_amount: 2000, expires_at, nonce }`
   3. Gateway Middleware:
-     * Validates token signature, checks `amount <= max_amount`, confirms `recipient === approved_recipient`, checks unspent nonce.
+     * Validates token signature, checks `amount <= max_amount`, confirms `recipient === approved_recipient`, checks and burns unspent nonce.
   4. Adversarial Attack Demo:
      * Script prompt-injection attack attempting to alter recipient to `Attacker_Wallet` or amount to INR 50,000.
      * Gateway rejects with `403 Forbidden (Capability Constraint Violation)`.

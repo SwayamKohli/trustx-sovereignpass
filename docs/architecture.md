@@ -88,6 +88,9 @@ TrustX SovereignPass addresses these challenges through an architectural referen
   * Look-alike Phishing Domain: `https://b4nk-secure.local:3001`
   * The browser captures the calling origin (including port) in `clientDataJSON.origin`.
   * The relying party strictly enforces `clientDataJSON.origin === expectedOrigin`.
+* **Two-Layer Phishing Test:**
+  * *Layer 1 (Browser/Client RP ID Isolation):* When a user visits `https://b4nk-secure.local:3001`, the browser scopes credentials to RP ID `b4nk-secure.local`. It discovers zero matching credentials and refuses to offer or unlock the genuine passkey.
+  * *Layer 2 (Server-Side Validation):* The backend independently tests rejection of invalid or mismatched assertions: an assertion claiming an unexpected origin or bearing an invalid cryptographic signature is immediately rejected with `OriginMismatchError`.
 * **Signature Counter Handling:**
   * Some platform authenticators (such as Apple iCloud Keychain) consistently return `signCount = 0` to preserve user privacy.
   * Counter rollbacks are flagged as an anomaly signal only when `lastCounter > 0` and `incomingCounter <= lastCounter`.
@@ -99,7 +102,7 @@ TrustX SovereignPass addresses these challenges through an architectural referen
 * **Kiosk Session Mechanics:**
   * A web application cannot force remote operating system keychains to purge credentials.
   * To prevent passkey residue on shared machines, public computers **never enroll a local passkey**.
-  * Access is mediated via cross-device QR approval or a dedicated removable FIDO2 USB key.
+  * Access is mediated via cross-device QR approval (testing either native FIDO caBLE hybrid transport or a reachable secure tunnel where `rpID` and `expectedOrigin` match the tunnel hostname) or a dedicated removable FIDO2 USB key.
   * Sessions on shared terminals carry a strict 15-minute time-to-live.
 * **Authoritative Server-Side Session Revocation:**
   * When a user logs out or revokes a device, the server deletes the corresponding session record from the database.
@@ -107,12 +110,13 @@ TrustX SovereignPass addresses these challenges through an architectural referen
 
 ---
 
-### Component 3: Account Recovery Engine (Zero SMS Fallback)
+### Component 3: Account Recovery Engine & Lockout Prevention
 * **The Problem:** Falling back to SMS OTPs or security questions re-exposes accounts to SIM swapping and social engineering.
-* **Tier 1 (Core — P0): Single-Use Hashed Recovery Bearer Secrets:**
-  * 8 high-entropy alphanumeric codes generated at initial onboarding.
-  * Stored on the server strictly as **Argon2id salted hashes**.
-  * Sensitive bearer secrets: users must store them securely offline; server enforces rate limiting and atomic single-use invalidation.
+* **Safe Two-Phase Atomic Recovery (Lockout Prevention):**
+  * 8 high-entropy alphanumeric codes generated at initial onboarding, stored strictly as **Argon2id salted hashes**.
+  * Sensitive bearer secrets: users must store them securely offline; server enforces rate limiting on verification attempts.
+  * *Phase 1 (Verification):* User submits a recovery code. The server validates it against the stored Argon2id hash and issues a temporary, short-lived (5-minute) recovery ticket. **The code is not permanently consumed yet**, preventing permanent lockout if the browser crashes or replacement registration is interrupted.
+  * *Phase 2 (Atomic Finalization):* The user completes replacement passkey enrollment. Only upon **successful verification of the new passkey assertion**, the server atomically burns the recovery code (`consumed = true`), marks the lost credential `status = 'REVOKED'`, and terminates all old sessions.
 * **Tier 2 (Optional Stretch — P3): GuardianMesh Shamir Secret Sharing:**
   * Master recovery secret split into 3 polynomial shards ($S_1, S_2, S_3$).
   * Any 2 guardians approve via their passkeys to reconstruct the recovery secret, with a 24-hour time-lock cancellation window.
@@ -121,13 +125,14 @@ TrustX SovereignPass addresses these challenges through an architectural referen
 
 ### Component 4: Challenge-Bound AI-Agent Delegation (Optional Extension)
 * **The Problem:** Providing autonomous AI agents with static credentials or passwords exposes systems to prompt-injection tampering.
-* **The Challenge-Binding Mechanism:**
+* **Structured Intent Binding Mechanism:**
   1. The user reviews and delegates an action: *"Pay utility bill of INR 1,800 to TataPower."*
-  2. The server constructs an authentication challenge embedding the transaction parameters:
-     $$\text{challenge} = \text{SHA-256}(\text{user\_id} + \text{"POST /api/v1/payments"} + \text{"TataPower"} + 1800 + \text{nonce})$$
-  3. The user authorizes this server-bound challenge via biometric passkey in a standard WebAuthn ceremony.
-  4. The server validates that the WebAuthn assertion authorizes the specific challenge.
-  5. Upon server verification, the server issues a constrained capability token (HMAC-SHA256 signed by the server):
+  2. The server records a pending transaction intent in `delegation_intents` with canonical parameters:
+     `{ intent_id, user_id, action: "POST /api/v1/payments", recipient: "TataPower", max_amount: 2000, nonce, expires_at }`.
+  3. The server generates a single-use WebAuthn challenge cryptographically bound to this stored intent record.
+  4. The user authorizes this server-bound challenge via biometric passkey in a standard WebAuthn ceremony.
+  5. The server validates that the WebAuthn assertion authorizes the specific challenge.
+  6. Upon server verification, the server issues a constrained capability token (HMAC-SHA256 signed by the server) carrying the approved intent parameters:
      ```json
      {
        "delegation_id": "del_99812a",
@@ -139,8 +144,8 @@ TrustX SovereignPass addresses these challenges through an architectural referen
        "expires_at": 1728852000
      }
      ```
-  6. The AI agent submits the transaction with this capability token.
-  7. **Gateway Enforcement:** The API gateway independently verifies that `recipient === approved_recipient`, `amount <= max_amount`, and `nonce` is unspent. If prompt injection attempts to redirect funds to an unauthorized wallet, the gateway rejects the request with `403 Forbidden`.
+  7. The AI agent submits the transaction with this capability token.
+  8. **Gateway Enforcement:** The API gateway independently verifies that `recipient === approved_recipient`, `amount <= max_amount`, and `nonce` is unspent. If prompt injection attempts to redirect funds to an unauthorized wallet, the gateway rejects the request with `403 Forbidden`.
 
 ---
 
