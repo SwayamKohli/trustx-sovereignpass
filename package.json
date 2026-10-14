@@ -1,0 +1,26 @@
+{
+  "name": "trustx-sovereignpass",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TrustX SovereignPass: Phishing-Resistant Passwordless Authentication with Shared-Device Session Security & Constrained AI-Agent Delegation",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"cyan,magenta\" \"npm run dev --workspace=@trustx/backend\" \"npm run dev --workspace=@trustx/frontend\"",
+    "dev:backend": "npm run dev --workspace=@trustx/backend",
+    "dev:frontend": "npm run dev --workspace=@trustx/frontend",
+    "dev:frontend:mock": "npm run dev:mock --workspace=@trustx/frontend",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "test:attacks": "ts-node tests/test_attacks.ts",
+    "benchmark:pqc": "node --no-warnings -r ts-node/register scripts/benchmarks/pqc_benchmark.ts"
+  },
+  "devDependencies": {
+    "@noble/post-quantum": "^0.7.1",
+    "@types/node": "^22.13.1",
+    "concurrently": "^9.1.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
