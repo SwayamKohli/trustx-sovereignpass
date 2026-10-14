@@ -33,6 +33,7 @@ Detailed specifications and implementation guides are available in the [`docs/`]
 * [`docs/architecture.md`](./docs/architecture.md) — Complete system topology, cryptographic models, four user journeys, and STRIDE threat model.
 * [`docs/execution-roadmap.md`](./docs/execution-roadmap.md) — Step-by-step roadmap for Day 2 preparation and the 24-hour hackathon sprint.
 * [`docs/compliance-and-frameworks.md`](./docs/compliance-and-frameworks.md) — Analysis of Indian cyber regulations (DPDP Act, CERT-In Directions), international standards (NIST SP 800-63B, W3C WebAuthn), and defensible pitch claims.
+* [`TEAM_TASK_BREAKDOWN.md`](./TEAM_TASK_BREAKDOWN.md) — Member folder boundaries, deliverables, API interface contracts, and Git merge rules for Adnan, Ananya, Sanchit, and Swayam.
 
 ---
 
