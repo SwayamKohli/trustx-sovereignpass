@@ -28,9 +28,9 @@ out/
 .env.development.local
 .env.test.local
 .env.production.local
-*.pem
-*.key
-certs/
+certs/*.pem
+certs/*.key
+!certs/.gitkeep
 
 # Logs
 npm-debug.log*
