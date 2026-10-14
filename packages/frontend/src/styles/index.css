@@ -1,2 +1,42 @@
 /* TrustX SovereignPass Global Theme & Typography (Tailwind CSS) */
 /* Owner: Ananya (Role 2 — Product, UI/UX & Admin SOC Lead) */
+@import 'tailwindcss';
+:root { font-family: system-ui, sans-serif; color: #172f35; background: #f4f7f5; line-height: 1.6; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header, footer { max-width: 1120px; margin: auto; padding: 24px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.brand { font-weight: 800; font-size: 24px; color: #164d45; text-decoration: none; }
+.brand span { font-weight: 400; font-size: 16px; }
+main { max-width: 1120px; margin: 40px auto; padding: 24px; align-items: center; }
+aside { padding: 24px 0; }
+aside h2 { font-size: clamp(32px, 5vw, 52px); line-height: 1.15; letter-spacing: -1px; margin: 20px 0; }
+aside p { max-width: 380px; }
+.card { background: white; padding: clamp(24px, 4vw, 40px); border: 1px solid #ccd8d4; border-radius: 20px; }
+h1 { font-size: 30px; line-height: 1.2; margin: 12px 0 20px; font-weight: 700; }
+h2 { font-size: 22px; font-weight: 700; }
+p { margin: 12px 0; }
+.eyebrow { text-transform: uppercase; font-size: 12px; letter-spacing: 1.5px; font-weight: 700; color: #35615a; }
+label { display: block; font-weight: 600; margin: 24px 0 8px; }
+input:not([type='checkbox']) { display: block; width: 100%; padding: 12px; border: 1px solid #657f79; border-radius: 8px; background: white; }
+button { background: #164d45; color: white; padding: 12px 18px; border: 1px solid #164d45; border-radius: 8px; font: inherit; cursor: pointer; }
+button:disabled { opacity: .65; cursor: not-allowed; }
+form > button { width: 100%; margin-top: 12px; }
+nav { display: flex; gap: 8px; margin-bottom: 30px; flex-wrap: wrap; }
+nav button, .secondary { background: white; color: #164d45; }
+nav button[aria-current='page'] { background: #e1efea; }
+:focus-visible { outline: 3px solid #8a4700; outline-offset: 4px; }
+.hint, footer { font-size: 14px; color: #4b625d; }
+.error { color: #922424; background: #fff0ef; padding: 12px; border-radius: 8px; }
+.banner { background: #fff0ce; color: #664000; text-align: center; padding: 12px; font-size: 14px; }
+dialog { margin: auto; padding: 28px; max-width: 580px; width: calc(100% - 32px); max-height: 90vh; overflow: auto; border: 1px solid #ccd8d4; border-radius: 16px; color: #172f35; background: white; }
+dialog::backdrop { background: #102e35aa; }
+.codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 20px 0; list-style: none; }
+.codes li { padding: 8px; background: #edf3f0; overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.checkbox { display: flex; gap: 10px; align-items: center; margin: 20px 0; }
+.checkbox input { width: 20px; height: 20px; flex-shrink: 0; }
+.future { border-top: 1px solid #ccd8d4; padding: 20px 0; margin: 24px 0; }
+.skip { position: absolute; left: 12px; top: -100px; background: white; padding: 12px; z-index: 10; }
+.skip:focus { top: 12px; }
+@media (max-width: 480px) { .codes { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } main { margin-top: 0; } }
