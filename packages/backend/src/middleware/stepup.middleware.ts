@@ -80,7 +80,7 @@ export function requireStepUpAuthorization(options: StepUpOptions = {}) {
       // Check route normalization
       const expectedRoute = (req.originalUrl || req.path).split('?')[0].replace(/\/+$/, '');
       const recordRoute = record.route.split('?')[0].replace(/\/+$/, '');
-      if (recordRoute !== expectedRoute && !recordRoute.endsWith(expectedRoute)) {
+      if (recordRoute !== expectedRoute) {
         return res.status(403).json({ error: 'Step-up token bound to different route' });
       }
 

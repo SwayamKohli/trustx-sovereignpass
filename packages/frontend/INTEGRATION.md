@@ -1,5 +1,7 @@
 # Evaluation-2 frontend integration handoff
 
+> Updated integration status: the backend routes are now implemented. The original proposal notes below are historical. Use the root README's live-demo instructions: `npm run dev` starts the genuine bank and attacker service together, `/demo` provides working per-environment links, and SOC results come from live route probes. Administrator access requires an actual ADMIN role and device-bound session; no guest bypass is available.
+
 Base: fetched `origin/main` at `b71950e`, fast-forwarded into `cybercup-ananya`. Ananya's Day 2 commit is already included. No backend source files were changed in this implementation. Dependencies now use the root workspace package-lock.json; the obsolete nested frontend lock was removed (recoverable from Git).
 
 ## Existing contracts

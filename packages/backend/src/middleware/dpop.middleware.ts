@@ -91,7 +91,7 @@ export function verifyDPoPProof(
     // Compare path (normalize trailing slashes and query strings)
     const normalizedExpected = expectedPath.split('?')[0].replace(/\/+$/, '');
     const normalizedActual = payload.htu.split('?')[0].replace(/\/+$/, '');
-    if (normalizedActual !== normalizedExpected && !normalizedActual.endsWith(normalizedExpected)) {
+    if (normalizedActual !== normalizedExpected) {
       return {
         valid: false,
         error: `DPoP URI path mismatch: expected ${normalizedExpected}, got ${normalizedActual}`,

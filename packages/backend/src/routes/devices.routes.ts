@@ -10,6 +10,7 @@ import {
 } from '@simplewebauthn/server';
 import { db } from '../db/index';
 import { requireSession } from '../middleware/session.middleware';
+import { requireStepUpAuthorization } from '../middleware/stepup.middleware';
 import { rpName } from '../webauthn/config';
 import { getEffectiveRpID, getEffectiveOrigin } from './auth.routes';
 import type { Credential } from '../db/schema';
@@ -164,7 +165,7 @@ router.post('/register-verify', requireSession, async (req: Request, res: Respon
  * Strictly verifies ownership to prevent BOLA/IDOR attacks.
  * Immediately terminates all active SQLite sessions tied to that revoked credential.
  */
-router.post('/revoke', requireSession, (req: Request, res: Response) => {
+router.post('/revoke', requireSession, requireStepUpAuthorization({ alwaysEnforce: true }), (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const { credentialId } = req.body;

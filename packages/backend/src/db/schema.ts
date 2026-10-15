@@ -187,6 +187,7 @@ export interface Session {
 }
 
 export interface KioskAuthorization {
+  dpop_public_key?: string | null;
   kiosk_session_id: string;
   token_hash: string;
   kiosk_client_secret_hash: string;

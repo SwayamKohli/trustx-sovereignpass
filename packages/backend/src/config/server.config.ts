@@ -56,6 +56,7 @@ export const serverConfig: ServerConfig = {
  * Returns null if certificates are not yet generated via mkcert.
  */
 export function loadSslCertificates(): { cert: Buffer; key: Buffer } | null {
+  if (process.env.LOCAL_HTTP === '1') return null;
   const { cert: certPath, key: keyPath } = serverConfig.certPaths;
   if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     return {
@@ -64,6 +65,16 @@ export function loadSslCertificates(): { cert: Buffer; key: Buffer } | null {
     };
   }
   return null;
+}
+
+export function demoOrigins() {
+  const secure = !!loadSslCertificates();
+  return {
+    bankOrigin: secure ? serverConfig.expectedOrigin : `http://localhost:${serverConfig.port}`,
+    attackerOrigin: secure ? serverConfig.fakePhishingOrigin : `http://127.0.0.1:${process.env.PHISH_PORT || '3001'}`,
+    rpId: secure ? serverConfig.rpId : 'localhost',
+    mode: secure ? 'https' : 'local-http',
+  };
 }
 
 /**

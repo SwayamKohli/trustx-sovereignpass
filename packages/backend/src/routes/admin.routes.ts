@@ -5,38 +5,16 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { db } from '../db/index';
 import { buildAuditLedger } from '../scripts/export-audit-log';
-import type { Session, User } from '../db/schema';
+import type { Session } from '../db/schema';
+import { requireAdmin } from '../middleware/auth.middleware';
+import { runLiveProbes, type LiveReport } from '../services/live-probes';
 
 const router = Router();
 
 /**
  * Middleware ensuring caller has active session with ADMIN role
  */
-function requireAdminRole(req: Request, res: Response, next: Function) {
-  const sessionId = req.cookies?.session_id;
-  if (!sessionId) {
-    return res.status(401).json({ error: 'Authentication required' });
-  }
-
-  const session = db.prepare(`
-    SELECT s.id, s.user_id, u.role
-    FROM sessions s
-    JOIN users u ON s.user_id = u.id
-    WHERE s.id = ? AND s.expires_at > ?
-  `).get(sessionId, Date.now()) as { id: string; user_id: string; role: string } | undefined;
-
-  // In demo / hackathon mode, if not admin, check header or allow demo inspection with flag
-  if (session && session.role === 'ADMIN') {
-    return next();
-  }
-
-  // Allow localhost admin access or explicit demo header for hackathon presentation
-  if (req.headers['x-admin-demo-key'] === 'cybercup-soc-key' || req.ip === '127.0.0.1' || req.ip === '::1') {
-    return next();
-  }
-
-  return res.status(403).json({ error: 'Access denied: Administrator privileges required' });
-}
+const requireAdminRole = requireAdmin;
 
 /**
  * GET /api/admin/credentials
@@ -100,6 +78,7 @@ router.get('/sessions', requireAdminRole, (req: Request, res: Response) => {
       expiresAt: s.expires_at,
       expires_at: s.expires_at,
       isDeviceBound: Boolean(s.is_device_bound),
+      isCurrent: s.id === req.session?.id,
       is_device_bound: s.is_device_bound,
     }));
 
@@ -173,13 +152,7 @@ router.get('/audit-logs', requireAdminRole, (req: Request, res: Response) => {
       };
     });
 
-    const { ledger, isTamperFree } = buildAuditLedger();
-    return res.json({
-      totalEvents: ledger.length,
-      isTamperFree,
-      events: ledger.slice(-50).reverse(), // Most recent 50 events
-      logs,
-    });
+    return res.json({ logs, totalEvents: (db.prepare('SELECT COUNT(*) AS count FROM audit_events').get() as { count: number }).count });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to query audit ledger' });
   }
@@ -202,89 +175,14 @@ router.post('/audit-chain/verify', requireAdminRole, (req: Request, res: Respons
   }
 });
 
-function generateAttackReport() {
-  const probes = [
-    {
-      id: 'probe-1',
-      name: 'Lookalike Origin Mismatch & Relay Defense',
-      status: 'PASS' as const,
-      detail: 'W3C WebAuthn §5.1.3 clientDataJSON origin validation strictly rejects b4nk-secure.local',
-    },
-    {
-      id: 'probe-2',
-      name: 'Authenticator Counter Replay Anomaly Defense',
-      status: 'PASS' as const,
-      detail: 'Monotonic hardware signature counter divergence detection blocks cloned credentials',
-    },
-    {
-      id: 'probe-3',
-      name: 'Unissued / Expired Challenge Injection Defense',
-      status: 'PASS' as const,
-      detail: 'Cryptographic nonce validation prevents unissued challenge replay injection',
-    },
-    {
-      id: 'probe-4',
-      name: 'Two-Phase Recovery Bearer Code Reuse Defense',
-      status: 'PASS' as const,
-      detail: 'Argon2id salted hash + atomic database transaction prevents recovery code reuse',
-    },
-    {
-      id: 'probe-5',
-      name: 'Revoked Credential Invalidation Defense',
-      status: 'PASS' as const,
-      detail: 'Server-side revocation immediately terminates active sessions in SQLite',
-    },
-    {
-      id: 'probe-6',
-      name: 'AI Agent Capability Gateway Parameter Tampering Defense',
-      status: 'PASS' as const,
-      detail: 'HMAC-SHA256 server-side capability tokens block prompt injection tampering',
-    },
-    {
-      id: 'probe-7',
-      name: 'Stolen Cookie Replay / Session Hijacking Defense (DPoP)',
-      status: 'PASS' as const,
-      detail: 'Non-extractable WebCrypto proof-of-possession device binding rejects stolen bearer cookies',
-    },
-    {
-      id: 'probe-8',
-      name: 'Risk Engine Step-Up Authorization Bypass Defense',
-      status: 'PASS' as const,
-      detail: 'Request-bound single-use intent tokens block step-up tampering and replay',
-    },
-  ];
-
-  return {
-    runId: `run_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
-    timestamp: new Date().toISOString(),
-    probesCount: probes.length,
-    passedCount: probes.length,
-    failedCount: 0,
-    probes,
-  };
-}
-
-/**
- * GET /api/admin/attack-results
- * Returns the latest automated attack verification report
- */
-router.get('/attack-results', requireAdminRole, (req: Request, res: Response) => {
-  return res.json(generateAttackReport());
+let latestReport: LiveReport | undefined;
+let running = false;
+router.get('/attack-results', requireAdminRole, (_req, res) => latestReport ? res.json(latestReport) : res.status(404).json({ error: 'NO_PROBE_RUN_YET' }));
+router.post('/attacks/run', requireAdminRole, async (_req, res) => {
+  if (running) return res.status(409).json({ error: 'A probe run is already in progress' });
+  running = true;
+  try { latestReport = await runLiveProbes(); return res.json(latestReport); }
+  catch { return res.status(500).json({ error: 'PROBE_RUN_FAILED' }); }
+  finally { running = false; }
 });
-
-/**
- * POST /api/admin/attacks/run (and alias /run-attack-probes)
- * Dynamically executes adversarial attack probes and returns live results for the SOC UI
- */
-const runAttackHandler = async (req: Request, res: Response) => {
-  try {
-    return res.json(generateAttackReport());
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'Failed to execute attack probes' });
-  }
-};
-
-router.post('/attacks/run', requireAdminRole, runAttackHandler);
-router.post('/run-attack-probes', requireAdminRole, runAttackHandler);
-
 export default router;

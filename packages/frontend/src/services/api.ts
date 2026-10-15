@@ -54,7 +54,7 @@ export function friendlyError(error: unknown): string {
       if (error.code && error.code.toLowerCase().includes('user')) return 'Username not registered. Please create an account first.';
       return 'This service is not available on the connected backend yet.';
     }
-    if (error.status === 400) return error.code || 'The request is invalid, expired, or already used. Check your details and try again.';
+    if (error.status === 400) return 'The request is invalid, expired, or already used. Check your details and try again.';
     return 'The service is unavailable. Please try again later.';
   }
   if (error instanceof Error && ['NotAllowedError', 'AbortError'].includes(error.name)) return 'The passkey prompt was cancelled or timed out. You can try again.';
@@ -135,7 +135,10 @@ export function validateAttackReport(data: AttackReport): AttackReport {
   if (!data || !validString(data.runId) || !validDate(data.timestamp) || !Array.isArray(data.probes) || data.probes.length === 0 || !data.probes.every(item => item && validString(item.id) && validString(item.name) && validString(item.detail) && ['PASS', 'FAIL', 'SKIPPED'].includes(item.status)) || new Set(data.probes.map(item => item.id)).size !== data.probes.length) throw new Error('Invalid attack report');
   return data;
 }
-export const attackReport = async () => validateAttackReport(await request<AttackReport>('/admin/attack-results'));
+export const attackReport = async () => {
+  try { return validateAttackReport(await request<AttackReport>('/admin/attack-results')); }
+  catch (error) { if (error instanceof ApiError && error.status === 404 && error.code === 'NO_PROBE_RUN_YET') return undefined; throw error; }
+};
 export const runAttacks = async () => validateAttackReport(await request<AttackReport>('/admin/attacks/run', {}));
 export const verifyChain = async () => {
   const result = await request<ChainReport>('/admin/audit-chain/verify', {});

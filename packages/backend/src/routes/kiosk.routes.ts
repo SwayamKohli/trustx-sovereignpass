@@ -29,7 +29,14 @@ router.post('/qr-challenge', (req: Request, res: Response) => {
     const kioskSessionId = `kiosk_sess_${crypto.randomBytes(8).toString('hex')}`;
     const kioskClientSecret = `sec_kiosk_poll_private_${crypto.randomBytes(16).toString('hex')}`;
     const token = `tok_single_use_${crypto.randomBytes(16).toString('hex')}`;
-    const displayCode = Math.floor(10 + Math.random() * 90); // 2-digit confirmation code (10-99)
+    const displayCode = crypto.randomInt(10, 100);
+    const publicKey = req.body.dpopPublicKey;
+    let deviceKey: string | null = null;
+    if (publicKey) {
+      if (publicKey.kty !== 'EC' || publicKey.crv !== 'P-256' || publicKey.d) return res.status(400).json({ error: 'Invalid public device key' });
+      crypto.createPublicKey({ key: publicKey, format: 'jwk' });
+      deviceKey = JSON.stringify(publicKey);
+    }
     const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes validity
     const nowIso = new Date().toISOString();
 
@@ -41,15 +48,16 @@ router.post('/qr-challenge', (req: Request, res: Response) => {
     db.prepare(`
       INSERT INTO kiosk_authorizations (
         kiosk_session_id, token_hash, kiosk_client_secret_hash, display_code,
-        user_id, challenge, status, expires_at, created_at
-      ) VALUES (?, ?, ?, ?, NULL, NULL, 'PENDING', ?, ?)
+        user_id, challenge, status, expires_at, created_at, dpop_public_key
+      ) VALUES (?, ?, ?, ?, NULL, NULL, 'PENDING', ?, ?, ?)
     `).run(
       kioskSessionId,
       tokenHash,
       secretHash,
       displayCode,
       expiresAt,
-      nowIso
+      nowIso,
+      deviceKey
     );
 
     return res.json({
@@ -300,8 +308,8 @@ router.post('/qr-poll', (req: Request, res: Response) => {
 
         // Issue 15-minute ephemeral session with is_kiosk = 1
         db.prepare(`
-          INSERT INTO sessions (id, user_id, credential_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at)
-          VALUES (?, ?, NULL, ?, ?, 1, ?, ?, ?)
+          INSERT INTO sessions (id, user_id, credential_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at, dpop_public_key)
+          VALUES (?, ?, NULL, ?, ?, 1, ?, ?, ?, ?)
         `).run(
           sessionId,
           kiosk.user_id,
@@ -309,7 +317,8 @@ router.post('/qr-poll', (req: Request, res: Response) => {
           ephemeralExpiryMs,
           ipAddress,
           userAgent,
-          nowMs
+          nowMs,
+          kiosk.dpop_public_key ?? null
         );
 
         db.prepare(`
@@ -344,6 +353,7 @@ router.post('/qr-poll', (req: Request, res: Response) => {
           role: user.role || 'USER',
         },
         isKiosk: true,
+        isDeviceBound: !!kiosk.dpop_public_key,
         expiresAt: ephemeralExpiryMs,
       });
     }

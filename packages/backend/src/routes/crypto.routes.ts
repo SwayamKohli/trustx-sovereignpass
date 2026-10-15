@@ -125,22 +125,7 @@ router.get('/pqc-benchmark', async (req: Request, res: Response) => {
         throughputVerifyOpsSec: Math.round(1000 / (mlDsaVerifyTotal / ITERATIONS)),
       };
     } catch {
-      // Fallback if dynamic import fails in some environments
-      postQuantum = {
-        algorithm: 'ML-DSA-44 (Dilithium2)',
-        type: 'Post-Quantum (NIST FIPS 204)',
-        nistStandard: 'FIPS 204 (Module-Lattice)',
-        quantumResistant: true,
-        shorAlgorithmVulnerable: false,
-        publicKeyBytes: 1312,
-        privateKeyBytes: 2560,
-        signatureBytes: 2420,
-        avgKeyGenMs: 0.124,
-        avgSignMs: 0.381,
-        avgVerifyMs: 0.108,
-        throughputSignOpsSec: 2624,
-        throughputVerifyOpsSec: 9259,
-      };
+      throw new Error('ML-DSA benchmark unavailable; no substitute measurements were generated');
     }
 
     res.json({

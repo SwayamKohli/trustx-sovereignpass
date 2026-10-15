@@ -6,9 +6,10 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "admin:grant": "tsx src/scripts/grant-admin.ts",
     "dev:phishing": "tsx src/phishing-server.ts",
     "build": "tsc",
-    "test": "ts-node test/services.test.ts",
+    "test": "ts-node test/services.test.ts && tsx test/live-demo.test.ts",
     "test:attacks": "tsx test/test_attacks.ts",
     "test:challenges": "tsx src/scripts/test-challenges.ts",
     "test:lifecycle": "tsx test/test_identity_lifecycle.ts",

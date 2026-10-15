@@ -27,7 +27,7 @@ export interface CapabilityPayload {
 
 export class AgentService {
   private static readonly SECRET_KEY =
-    process.env.AGENT_CAPABILITY_SECRET || 'trustx-sovereignpass-agent-secret-key-2026';
+    process.env.AGENT_CAPABILITY_SECRET || crypto.randomBytes(32).toString('hex');
 
   // In-memory intent and spent nonce store for Day 2 contract freeze (SQLite schema integration in Sprint 3)
   private static pendingIntents = new Map<string, DelegationIntent>();
@@ -49,7 +49,7 @@ export class AgentService {
 
     // Cryptographically bind parameters into WebAuthn challenge
     const canonicalBinding = `${intentId}:${params.action}:${params.recipient}:${params.maxAmount}:${nonce}:${expiresAt}`;
-    const challenge = crypto.createHash('sha256').update(canonicalBinding).digest('hex');
+    const challenge = crypto.createHash('sha256').update(canonicalBinding).digest('base64url');
 
     const intent: DelegationIntent = {
       intentId,
@@ -84,6 +84,7 @@ export class AgentService {
    * Mints an HMAC-SHA256 signed capability token upon successful biometric assertion.
    */
   public static mintCapabilityToken(intent: DelegationIntent): string {
+    if (intent.status !== 'PENDING' || intent.expiresAt <= Date.now()) throw new Error('Intent is not pending or has expired');
     intent.status = 'AUTHORIZED';
 
     const payload: CapabilityPayload = {
@@ -145,6 +146,7 @@ export class AgentService {
     execution: { recipient: string; amount: number }
   ): { success: true; txId: string; executedAmount: number; recipient: string } {
     const capability = this.verifyCapabilityToken(token);
+    if (!Number.isFinite(execution.amount) || execution.amount <= 0) throw new Error('CAPABILITY_VIOLATION_AMOUNT: Amount must be positive and finite');
 
     // 1. Recipient Constraint Check (Defense against prompt injection)
     if (execution.recipient !== capability.recipient) {

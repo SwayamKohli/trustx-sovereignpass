@@ -58,6 +58,7 @@ export function KioskQRModal({ onClose, onAuthorized }: { onClose: () => void; o
     {mockMode && <p className="banner">UI simulation only. Use “Simulate phone approval” below; cross-device preview is not supported.</p>}
     {qr && !outOfTime && <img className="qr" src={qr} width={260} height={260} alt="Scan this QR code with your trusted phone to approve this terminal" />}
     {challenge && !outOfTime && <><p className="confirmation-code" aria-label={`Confirmation code ${String(challenge.displayCode).padStart(2, '0')}`}>{String(challenge.displayCode).padStart(2, '0')}</p><p role="status">Waiting for phone approval. QR expires in {Math.max(0, Math.ceil((expiryMilliseconds(challenge.expiresAt) - now) / 1000))} seconds.</p></>}
+    {challenge && !outOfTime && <a className="button-link secondary" href={challenge.qrData} target="_blank" rel="noreferrer">Open phone approval in another window</a>}
     {!challenge && !error && <p role="status">Creating a short-lived QR challenge…</p>}
     {outOfTime && <p role="status">This QR code expired. Generate a new one to try again.</p>}
     {error && <p role="alert" className="error">{error}</p>}

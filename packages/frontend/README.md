@@ -1,5 +1,7 @@
 # Ananya — Evaluation 2 frontend
 
+For the integrated live solution, follow the root [README](../../README.md#run-the-live-same-laptop-demo). Start `npm run dev`, open `http://localhost:3000/demo` without local certificates, and use the separate attacker window. Backend routes, DPoP, step-up, kiosk and SOC are now connected. Missing-backend notes below describe the original handoff, not the current main branch. The live browser test now covers the full bank/attacker/SOC/recovery/kiosk scenario.
+
 Day 2 onboarding is extended with Ananya's assignments from the Evaluation-2 battle-plan PDF: DPoP signing, two-phase recovery, device management, shared-terminal QR approval, and SOC visibility. Backend enforcement is owned by Sanchit/Swayam; this frontend does not claim those controls are implemented server-side.
 
 ## Run and verify

@@ -28,6 +28,34 @@ Authentication infrastructure faces critical challenges: credential harvesting, 
 
 ## Documentation Index
 
+### Run the live same-laptop demo
+
+```sh
+npm install
+npm run dev
+```
+
+This starts the bank, Vite frontend, and attacker lab together. With no local certificates, open **http://localhost:3000/demo**. The attacker is **http://127.0.0.1:3001/phishing**: use a separate window and keep the hosts distinct. `localhost` uses the browser's loopback secure-context exception; these are real backend requests, not preview mode. Do not use the internal Vite port for the live demo.
+
+Register an account at the bank, save its recovery codes, and sign in. To enable SOC for a registered account, the local operator runs:
+
+```sh
+npm run admin:grant -- your-username
+```
+
+Refresh the bank and open `/admin` in another window. Use the demo arena to run cookie-replay comparisons, and the attacker site for dummy-password capture and browser/server origin tests. The SOC runner executes eight measured HTTP route checks using isolated software-authenticator fixtures. It does not replace the separate browser or physical-key tests. AgentShield requires real passkey authorization; its payments are sandbox records, not financial transfers. Crypto Lab never substitutes benchmark figures on failure.
+
+For the named HTTPS demo, install trusted certificates covering `bank.local` and `b4nk-secure.local` in `certs/cert.pem` and `certs/key.pem`, and resolve both names to `127.0.0.1` in `/etc/hosts`. Restart the stack and use the configured HTTPS origins throughout. Without that setup, use the working loopback URLs above rather than an unavailable HTTPS link. `LOCAL_HTTP=1 npm run dev` explicitly selects the loopback configuration.
+
+```sh
+npm run build
+npm test
+npm run test:e2e --workspace=@trustx/frontend
+npm run test:integration --workspace=@trustx/frontend
+```
+
+The integration test uses an isolated temporary database and virtual authenticators to exercise bank registration/login, the separate attacker site, SOC evidence, agent bounds, kiosk approval, device revocation, recovery and session termination. Existing databases are preserved. Audit rows are anchored once on upgrade; subsequent verification detects changes against stored anchors, not pre-upgrade tampering or a full rewrite of both data and anchors.
+
 Detailed specifications and implementation guides are available in the [`docs/`](./docs) directory:
 
 * [`docs/architecture.md`](./docs/architecture.md) — Complete system topology, cryptographic models, four user journeys, and STRIDE threat model.

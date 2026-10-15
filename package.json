@@ -7,7 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"cyan,magenta\" \"npm run dev --workspace=@trustx/backend\" \"npm run dev --workspace=@trustx/frontend\"",
+    "dev": "concurrently -k -n \"BANK,FRONTEND,ATTACKER\" -c \"cyan,magenta,red\" \"npm run dev --workspace=@trustx/backend\" \"npm run dev --workspace=@trustx/frontend\" \"npm run dev:phishing --workspace=@trustx/backend\"",
+    "admin:grant": "npm run admin:grant --workspace=@trustx/backend --",
     "dev:backend": "npm run dev --workspace=@trustx/backend",
     "dev:frontend": "npm run dev --workspace=@trustx/frontend",
     "dev:frontend:mock": "npm run dev:mock --workspace=@trustx/frontend",

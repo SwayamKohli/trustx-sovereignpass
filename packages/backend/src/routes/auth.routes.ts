@@ -26,6 +26,8 @@ interface ChallengeRecord {
   userId: string;
   type: 'registration' | 'authentication';
   expiresAt: number;
+  intentId?: string;
+  action?: { httpMethod: string; route: string; intentHash: string };
 }
 const challengeStore = new Map<string, ChallengeRecord>();
 
@@ -427,7 +429,7 @@ router.post('/login-verify', async (req: Request, res: Response) => {
  * POST /api/auth/step-up-challenge
  * Issues a biometric authentication challenge bound to a specific high-risk action intent
  */
-router.post('/step-up-challenge', async (req: Request, res: Response) => {
+router.post('/step-up-challenge', requireSession, async (req: Request, res: Response) => {
   try {
     const sessionId = req.cookies?.session_id;
     if (!sessionId) {
@@ -439,13 +441,14 @@ router.post('/step-up-challenge', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Valid session required' });
     }
 
-    const { httpMethod, route, body } = req.body;
-    if (!httpMethod || !route) {
+    const httpMethod = req.body.httpMethod || req.body.method;
+    const { route, body } = req.body;
+    if (typeof httpMethod !== 'string' || typeof route !== 'string' || !/^\/api\/[a-z0-9/-]+$/i.test(route)) {
       return res.status(400).json({ error: 'Missing httpMethod or route' });
     }
 
     const intentHash = RiskService.computeIntentHash(httpMethod, route, body || {});
-    const credentials = db.prepare('SELECT id, transports FROM credentials WHERE user_id = ? AND status = "ACTIVE"').all(session.user_id) as Credential[];
+    const credentials = db.prepare("SELECT id, transports FROM credentials WHERE user_id = ? AND status = 'ACTIVE'").all(session.user_id) as Credential[];
 
     if (credentials.length === 0) {
       return res.status(400).json({ error: 'No active authenticators enrolled for step-up' });
@@ -463,14 +466,17 @@ router.post('/step-up-challenge', async (req: Request, res: Response) => {
       userVerification: 'preferred',
     });
 
+    const intentId = crypto.randomUUID();
     challengeStore.set(`stepup_${session.id}`, {
       challenge: options.challenge,
       userId: session.user_id,
       type: 'authentication',
       expiresAt: Date.now() + 60000,
+      intentId,
+      action: { httpMethod: httpMethod.toUpperCase(), route, intentHash },
     });
 
-    return res.json({ options, intentHash });
+    return res.json({ intentId, stepUpOptions: options, options, intentHash });
   } catch (err: any) {
     console.error('[WebAuthn] step-up-challenge error:', err);
     return res.status(500).json({ error: 'Failed to generate step-up challenge' });
@@ -481,7 +487,7 @@ router.post('/step-up-challenge', async (req: Request, res: Response) => {
  * POST /api/auth/step-up-verify
  * Validates biometric assertion for the action-bound challenge and issues a single-use Step-Up Token
  */
-router.post('/step-up-verify', async (req: Request, res: Response) => {
+router.post('/step-up-verify', requireSession, async (req: Request, res: Response) => {
   try {
     const sessionId = req.cookies?.session_id;
     if (!sessionId) {
@@ -493,18 +499,18 @@ router.post('/step-up-verify', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Valid session required' });
     }
 
-    const { assertionResponse, httpMethod, route, body } = req.body;
-    if (!assertionResponse || !httpMethod || !route) {
-      return res.status(400).json({ error: 'Missing assertionResponse, httpMethod or route' });
+    const { assertionResponse, intentId } = req.body;
+    if (!assertionResponse || !intentId) {
+      return res.status(400).json({ error: 'Missing assertionResponse or intentId' });
     }
 
     const stored = challengeStore.get(`stepup_${session.id}`);
-    if (!stored || stored.expiresAt < Date.now()) {
+    if (!stored || stored.expiresAt < Date.now() || stored.intentId !== intentId || !stored.action) {
       return res.status(400).json({ error: 'Step-up challenge expired or not found' });
     }
     challengeStore.delete(`stepup_${session.id}`);
 
-    const cred = db.prepare('SELECT id, public_key, counter, transports FROM credentials WHERE id = ? AND user_id = ? AND status = "ACTIVE"').get(assertionResponse.id, session.user_id) as Credential | undefined;
+    const cred = db.prepare("SELECT id, public_key, counter, transports FROM credentials WHERE id = ? AND user_id = ? AND status = 'ACTIVE'").get(assertionResponse.id, session.user_id) as Credential | undefined;
     if (!cred) {
       return res.status(401).json({ error: 'Credential not found or revoked' });
     }
@@ -530,7 +536,8 @@ router.post('/step-up-verify', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Biometric step-up assertion verification failed' });
     }
 
-    const intentHash = RiskService.computeIntentHash(httpMethod, route, body || {});
+    const { httpMethod, route, intentHash } = stored.action;
+    db.prepare('UPDATE credentials SET counter = ?, last_used_at = ? WHERE id = ?').run(verification.authenticationInfo.newCounter, new Date().toISOString(), cred.id);
     const stepUpToken = `stup_${crypto.randomBytes(24).toString('hex')}`;
     const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minute validity window
 
@@ -576,6 +583,7 @@ router.get('/session', requireSession, (req: Request, res: Response) => {
       role: user.role,
     },
     isKiosk: Boolean(session.is_kiosk),
+    isDeviceBound: !!session.dpop_public_key,
     expiresAt: session.expires_at,
   });
 });
@@ -584,7 +592,7 @@ router.get('/session', requireSession, (req: Request, res: Response) => {
  * POST /api/auth/logout
  * Destroys session record in SQLite and clears the session cookie
  */
-router.post('/logout', (req: Request, res: Response) => {
+router.post('/logout', requireSession, (req: Request, res: Response) => {
   const sessionId = req.cookies?.session_id || 
     (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
   if (sessionId) {

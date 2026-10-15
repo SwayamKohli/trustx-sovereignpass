@@ -4,6 +4,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { createSchema } from './schema';
+import { initializeAuditIntegrity } from '../services/audit-integrity';
 
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '../../../trustx.db');
 
@@ -16,6 +17,8 @@ let dbInstance: Database.Database | null = null;
 export function getDb(): Database.Database {
   if (!dbInstance) {
     dbInstance = new Database(DB_PATH);
+    dbInstance.pragma('journal_mode = WAL');
+    dbInstance.pragma('busy_timeout = 5000');
     // Explicitly enable SQLite foreign key constraints
     dbInstance.pragma('foreign_keys = ON');
     // Run schema creation idempotently
@@ -29,6 +32,7 @@ export function getDb(): Database.Database {
       'ALTER TABLE sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT "unknown"',
       'ALTER TABLE sessions ADD COLUMN last_active_at INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE recovery_codes ADD COLUMN consumed_at TEXT',
+      'ALTER TABLE kiosk_authorizations ADD COLUMN dpop_public_key TEXT',
     ];
     for (const sql of migrations) {
       try {
@@ -37,6 +41,7 @@ export function getDb(): Database.Database {
         // Column already exists or table not ready
       }
     }
+    initializeAuditIntegrity(dbInstance);
   }
   return dbInstance;
 }

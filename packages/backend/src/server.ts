@@ -6,7 +6,7 @@ import http from 'http';
 import https from 'https';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { serverConfig, loadSslCertificates, createViteReverseProxy } from './config/server.config';
+import { serverConfig, loadSslCertificates, createViteReverseProxy, demoOrigins } from './config/server.config';
 import { initDb } from './db/index';
 import authRoutes from './routes/auth.routes';
 import recoveryRoutes from './routes/recovery.routes';
@@ -15,6 +15,7 @@ import kioskRoutes from './routes/kiosk.routes';
 import agentRoutes from './routes/agent.routes';
 import adminRoutes from './routes/admin.routes';
 import cryptoRoutes from './routes/crypto.routes';
+import demoRoutes from './routes/demo.routes';
 
 const app = express();
 
@@ -24,7 +25,7 @@ initDb();
 // Base middleware
 app.use(cors({
   origin: (requestOrigin, callback) => {
-    if (!requestOrigin || requestOrigin.includes('bank.local') || requestOrigin.includes('localhost') || requestOrigin.includes('127.0.0.1')) {
+    if (!requestOrigin || [demoOrigins().bankOrigin, serverConfig.expectedOrigin].includes(requestOrigin)) {
       callback(null, true);
     } else {
       callback(null, false);
@@ -46,6 +47,7 @@ const healthHandler = (req: express.Request, res: express.Response) => {
 };
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
+app.get('/api/demo/config', (_req, res) => res.json(demoOrigins()));
 
 // JSON body parsing for API endpoints
 app.use(express.json());
@@ -64,6 +66,7 @@ app.use('/api/admin', adminRoutes);
 
 // Mount post-quantum cryptography & hardware key diagnostics (Swayam - Role 4)
 app.use('/api/crypto', cryptoRoutes);
+app.use('/api/demo', demoRoutes);
 
 // Reverse-proxy all non-API requests to the internal Vite dev server (port 5173)
 // This ensures that the citizen browser interacts solely with https://bank.local:3000

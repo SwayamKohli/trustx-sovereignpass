@@ -122,6 +122,7 @@ export function requireSession(req: Request, res: Response, next: NextFunction) 
     role: sessionRow.role,
   };
   req.session = sessionRow;
+  req.userId = sessionRow.user_id;
 
   next();
 }
