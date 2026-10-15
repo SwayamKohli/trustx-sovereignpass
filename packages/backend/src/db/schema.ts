@@ -62,8 +62,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   dpop_public_key TEXT,
   ip_address TEXT NOT NULL,
   user_agent TEXT NOT NULL,
-  last_active_at INTEGER NOT NULL,
-  dpop_public_key TEXT
+  last_active_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
@@ -185,7 +184,6 @@ export interface Session {
   ip_address: string;
   user_agent: string;
   last_active_at: number;
-  dpop_public_key?: string | null;
 }
 
 export interface KioskAuthorization {

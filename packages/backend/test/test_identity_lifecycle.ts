@@ -57,10 +57,11 @@ async function runIdentityLifecycleTests() {
 
     // Stage pending recovery
     const ticketId = `ticket_${Date.now()}`;
+    const dynamicChallenge = `challenge_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     db.prepare(`
       INSERT INTO pending_recoveries (ticket_id, user_id, verified_recovery_code_id, replacement_registration_challenge, expires_at, used)
-      VALUES (?, ?, ?, 'challenge_123', ?, 0)
-    `).run(ticketId, testUserId, codeId, Math.floor(nowMs / 1000) + 300);
+      VALUES (?, ?, ?, ?, ?, 0)
+    `).run(ticketId, testUserId, codeId, dynamicChallenge, Math.floor(nowMs / 1000) + 300);
 
     // Phase 2: Atomic consumption
     const replacementCredId = `cred_replacement_${Date.now()}`;
