@@ -20,6 +20,23 @@ export function getDb(): Database.Database {
     dbInstance.pragma('foreign_keys = ON');
     // Run schema creation idempotently
     createSchema(dbInstance);
+
+    // Idempotent migrations for existing databases
+    const migrations = [
+      'ALTER TABLE sessions ADD COLUMN dpop_public_key TEXT',
+      'ALTER TABLE sessions ADD COLUMN is_kiosk INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE sessions ADD COLUMN ip_address TEXT NOT NULL DEFAULT "127.0.0.1"',
+      'ALTER TABLE sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT "unknown"',
+      'ALTER TABLE sessions ADD COLUMN last_active_at INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE recovery_codes ADD COLUMN consumed_at TEXT',
+    ];
+    for (const sql of migrations) {
+      try {
+        dbInstance.exec(sql);
+      } catch {
+        // Column already exists or table not ready
+      }
+    }
   }
   return dbInstance;
 }
