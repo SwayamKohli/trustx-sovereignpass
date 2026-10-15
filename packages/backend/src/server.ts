@@ -7,16 +7,21 @@ import https from 'https';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { serverConfig, loadSslCertificates, createViteReverseProxy } from './config/server.config';
+import { initDb } from './db/index';
+import authRoutes from './routes/auth.routes';
 import agentRoutes from './routes/agent.routes';
 
 const app = express();
+
+// Initialize SQLite database and frozen schema on startup
+initDb();
 
 // Base middleware
 app.use(cors({ origin: serverConfig.expectedOrigin, credentials: true }));
 app.use(cookieParser());
 
-// Healthcheck endpoint
-app.get('/api/health', (req, res) => {
+// Healthcheck endpoint (supports both /health and /api/health)
+const healthHandler = (req: express.Request, res: express.Response) => {
   res.json({
     status: 'HEALTHY',
     service: serverConfig.rpName,
@@ -24,10 +29,15 @@ app.get('/api/health', (req, res) => {
     expectedOrigin: serverConfig.expectedOrigin,
     timestamp: new Date().toISOString(),
   });
-});
+};
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 
 // JSON body parsing for API endpoints
 app.use(express.json());
+
+// Mount authentication routes (Sanchit)
+app.use('/api/auth', authRoutes);
 
 // Mount agent delegation routes (Swayam)
 app.use('/api/agent', agentRoutes);
