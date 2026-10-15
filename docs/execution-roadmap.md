@@ -1,5 +1,7 @@
 # TrustX SovereignPass — Master Execution Steps & Roadmap
 
+> Historical plan, not a completion checklist. Use [the final-evaluation runbook](final-evaluation.md) for current routes, configuration, tests and limitations. The old HMAC/maximum-amount capability plan has been replaced by persisted opaque, exact-intent authorization.
+
 **Hackathon Problem Statement:** CyberCup 6.0 | CC6-IC04 (Theme 1: IoT & Cyber Security)  
 **Timeline:** Day 2 (Preparation & Verification) and 24-Hour Campus Hackathon Sprint  
 

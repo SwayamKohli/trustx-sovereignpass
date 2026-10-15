@@ -67,6 +67,21 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
 
+CREATE TABLE IF NOT EXISTS known_login_contexts (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  credential_id TEXT NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+  ip_address TEXT NOT NULL,
+  user_agent TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  PRIMARY KEY(user_id, credential_id)
+);
+
+CREATE TABLE IF NOT EXISTS used_device_proofs (
+  id TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_device_proof_expiry ON used_device_proofs(expires_at);
+
 -- 6. Shared-Device Kiosk Session Authorizations
 CREATE TABLE IF NOT EXISTS kiosk_authorizations (
   kiosk_session_id TEXT PRIMARY KEY,
@@ -109,6 +124,17 @@ CREATE TABLE IF NOT EXISTS delegation_intents (
 );
 CREATE INDEX IF NOT EXISTS idx_delegation_user ON delegation_intents(user_id);
 CREATE INDEX IF NOT EXISTS idx_delegation_lookup ON delegation_intents(intent_id, status, expires_at);
+
+-- Synthetic money only; integer paise keep ledger arithmetic exact.
+CREATE TABLE IF NOT EXISTS sandbox_payments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  intent_id TEXT UNIQUE REFERENCES delegation_intents(intent_id),
+  recipient TEXT NOT NULL,
+  amount_paise INTEGER NOT NULL CHECK(amount_paise > 0),
+  source TEXT NOT NULL CHECK(source IN ('INTENTLOCK', 'BANK')),
+  created_at TEXT NOT NULL
+);
 
 -- 9. Security & Identity Lifecycle Audit Events Table
 CREATE TABLE IF NOT EXISTS audit_events (
@@ -174,6 +200,7 @@ export interface PendingRecovery {
 }
 
 export interface Session {
+  login_risk?: string | null;
   id: string;
   user_id: string;
   credential_id: string | null;
@@ -187,6 +214,7 @@ export interface Session {
 }
 
 export interface KioskAuthorization {
+  credential_id?: string | null;
   dpop_public_key?: string | null;
   kiosk_session_id: string;
   token_hash: string;

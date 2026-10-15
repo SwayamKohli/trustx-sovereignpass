@@ -89,6 +89,7 @@ router.get('/pqc-benchmark', async (req: Request, res: Response) => {
       let mlDsaKeyGenTotal = 0;
       let mlDsaSignTotal = 0;
       let mlDsaVerifyTotal = 0;
+      let publicKeyBytes = 0, privateKeyBytes = 0, signatureBytes = 0;
 
       for (let i = 0; i < ITERATIONS; i++) {
         const t0 = performance.now();
@@ -100,6 +101,7 @@ router.get('/pqc-benchmark', async (req: Request, res: Response) => {
         const signature = ml_dsa44.sign(sampleChallenge, keys.secretKey);
         const t3 = performance.now();
         mlDsaSignTotal += t3 - t2;
+        publicKeyBytes = keys.publicKey.length; privateKeyBytes = keys.secretKey.length; signatureBytes = signature.length;
 
         const t4 = performance.now();
         const valid = ml_dsa44.verify(signature, sampleChallenge, keys.publicKey);
@@ -115,9 +117,9 @@ router.get('/pqc-benchmark', async (req: Request, res: Response) => {
         nistStandard: 'FIPS 204 (Module-Lattice)',
         quantumResistant: true,
         shorAlgorithmVulnerable: false,
-        publicKeyBytes: ml_dsa44.lengths.publicKey ?? 1312,
-        privateKeyBytes: ml_dsa44.lengths.secretKey ?? 2560,
-        signatureBytes: ml_dsa44.lengths.signature ?? 2420,
+        publicKeyBytes,
+        privateKeyBytes,
+        signatureBytes,
         avgKeyGenMs: Number((mlDsaKeyGenTotal / ITERATIONS).toFixed(3)),
         avgSignMs: Number((mlDsaSignTotal / ITERATIONS).toFixed(3)),
         avgVerifyMs: Number((mlDsaVerifyTotal / ITERATIONS).toFixed(3)),
@@ -139,7 +141,7 @@ router.get('/pqc-benchmark', async (req: Request, res: Response) => {
         signatureRatio: Number((postQuantum.signatureBytes / classical.signatureBytes).toFixed(1)),
         keyGenSpeedup: classical.avgKeyGenMs > 0 ? Number((classical.avgKeyGenMs / postQuantum.avgKeyGenMs).toFixed(1)) : 1,
         signLatencyDelta: Number((postQuantum.avgSignMs - classical.avgSignMs).toFixed(3)),
-        verdict: 'ML-DSA-44 offers lattice-based quantum resistance. Payload is ~34x larger, necessitating hybrid crypto-agility.',
+        verdict: `Observed ML-DSA-44 signature payload is ${(postQuantum.signatureBytes / classical.signatureBytes).toFixed(1)}x the ECDSA DER signature payload. Standalone migration benchmark; not post-quantum WebAuthn login.`,
       },
     });
   } catch (err: any) {
@@ -154,6 +156,7 @@ router.get('/pqc-benchmark', async (req: Request, res: Response) => {
 router.get('/fido2-capabilities', (req: Request, res: Response) => {
   res.json({
     status: 'ACTIVE',
+    scope: 'Configuration reference only; not detection or attestation of connected hardware.',
     supportedAlgorithms: [
       { id: -7, name: 'ES256', curve: 'P-256', description: 'ECDSA over SHA-256 (Default Apple Touch ID, Face ID, Windows Hello, YubiKey 5)' },
       { id: -8, name: 'Ed25519', curve: 'Ed25519', description: 'EdDSA Edwards-curve (High-performance modern FIDO2 keys)' },
@@ -162,9 +165,9 @@ router.get('/fido2-capabilities', (req: Request, res: Response) => {
     supportedTransports: ['usb', 'nfc', 'ble', 'internal', 'hybrid'],
     authenticatorAttachmentModes: ['platform', 'cross-platform'],
     residentKeyRequirement: 'preferred',
-    userVerificationRequirement: 'preferred',
-    dpopProofSpecification: 'RFC 9449 WebCrypto ECDSA P-256 Proof-of-Possession',
-    pqcRoadmap: 'NIST FIPS 204 (ML-DSA) Hybrid FIDO2 Extension Ready',
+    userVerificationRequirement: 'required',
+    dpopProofSpecification: 'Custom method/path/time/identifier-bound ES256 browser proof; not full RFC 9449 conformance',
+    pqcRoadmap: 'Standalone ML-DSA benchmark only; no hybrid FIDO2 integration implemented',
   });
 });
 

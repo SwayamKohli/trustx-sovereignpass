@@ -13,12 +13,13 @@ import { PhishingLabPage } from './pages/PhishingLabPage';
 import { RecoveryModal } from './components/RecoveryModal';
 import { KioskQRModal } from './components/KioskQRModal';
 import { PersonaGuide } from './components/PersonaGuide';
+import { AccessHelpPage } from './pages/AccessHelpPage';
 import { ApiError, currentSession, mockMode } from './services/api';
 import { clearDeviceKey } from './services/dpop';
 import { expiryMilliseconds, type Session } from './services/types';
-import { getLanguage, setLanguage, t, type Language } from './services/i18n';
+import { getLanguage, setLanguage, t, tr, type Language } from './services/i18n';
 
-const routes = { login: '/', register: '/register', recovery: '/recovery', account: '/account', admin: '/admin', phone: '/kiosk-auth', agent: '/agent', crypto: '/crypto', demo: '/demo', phishing: '/phishing' } as const;
+const routes = { login: '/', register: '/register', recovery: '/recovery', account: '/account', admin: '/admin', phone: '/kiosk-auth', agent: '/agent', crypto: '/crypto', demo: '/demo', phishing: '/phishing', access: '/access' } as const;
 type Page = keyof typeof routes;
 function locationPage(): Page { return (Object.entries(routes).find(([, path]) => path === window.location.pathname)?.[0] as Page) ?? 'login'; }
 
@@ -30,10 +31,13 @@ export default function App() {
   const [kiosk, setKiosk] = useState(false);
   const [codes, setCodes] = useState<string[]>([]);
   const [lang, setLang] = useState<Language>(getLanguage());
+  const [securityKey, setSecurityKey] = useState(false);
   const main = useRef<HTMLElement>(null);
+  const labMenu = useRef<HTMLDetailsElement>(null);
   const strings = t();
+  useEffect(() => { document.documentElement.lang = lang; }, [lang]);
 
-  function navigate(next: Page) { setPage(next); setNotice(''); window.history.pushState(null, '', routes[next]); }
+  function navigate(next: Page) { if (labMenu.current) labMenu.current.open = false; setPage(next); setNotice(''); window.history.pushState(null, '', routes[next]); }
   const onAuthorized = useCallback((value: Session) => {
     setSession(value); setKiosk(false); setPage('account'); setNotice('');
     window.history.replaceState(null, '', routes.account);
@@ -76,25 +80,25 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [session]);
 
-  const publicLab = ['demo', 'crypto', 'phishing'].includes(page);
+  const publicLab = ['demo', 'crypto', 'phishing', 'access'].includes(page);
   const wide = !!session || publicLab;
   return <>
-    <a className="skip" href="#content">Skip to content</a>
+    <a className="skip" href="#content">{tr('Skip to content', 'मुख्य जानकारी पर जाएँ')}</a>
     <header className="app-header">
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <button className="brand brand-button" onClick={() => navigate(session ? 'account' : 'login')}>
+        {page === 'phishing' ? <span className="brand"><ShieldCheck aria-hidden="true" />TrustX <span>Controlled attacker lab</span></span> : <button className="brand brand-button" onClick={() => navigate(session ? 'account' : 'login')}>
           <ShieldCheck aria-hidden="true" />TrustX <span>{strings.brandSubtitle}</span>
-        </button>
+        </button>}
 
         {/* English / हिन्दी Linguistic Toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', background: '#020617', border: '1px solid #1e293b', borderRadius: '8px', padding: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', background: '#edf3f0', border: '1px solid #ccd8d4', borderRadius: '8px', padding: '2px' }}>
           <button
             style={{
               padding: '4px 8px',
               fontSize: '11px',
               fontWeight: 700,
-              background: lang === 'en' ? '#0284c7' : 'transparent',
-              color: lang === 'en' ? '#fff' : '#94a3b8',
+              background: lang === 'en' ? '#164d45' : 'transparent',
+              color: lang === 'en' ? '#fff' : '#4b625d',
               border: 'none',
               borderRadius: '6px',
               boxShadow: 'none',
@@ -110,8 +114,8 @@ export default function App() {
               padding: '4px 8px',
               fontSize: '11px',
               fontWeight: 700,
-              background: lang === 'hi' ? '#0284c7' : 'transparent',
-              color: lang === 'hi' ? '#fff' : '#94a3b8',
+              background: lang === 'hi' ? '#164d45' : 'transparent',
+              color: lang === 'hi' ? '#fff' : '#4b625d',
               border: 'none',
               borderRadius: '6px',
               boxShadow: 'none',
@@ -125,18 +129,21 @@ export default function App() {
         </div>
       </div>
 
-      <nav aria-label="Header quick navigation">
+      {page !== 'phishing' && <nav aria-label="Header quick navigation">
+        <button aria-current={page === 'access' ? 'page' : undefined} onClick={() => navigate('access')}>{tr('Access help', 'प्रवेश में सहायता')}</button>
+        {session ? <button onClick={() => navigate('account')}><LayoutDashboard aria-hidden="true" />{strings.navAccount}</button> : <button onClick={() => navigate('login')}><LogIn aria-hidden="true" />{strings.navSignIn}</button>}
+        <details ref={labMenu} className="lab-menu"><summary>{tr('Security labs', 'सुरक्षा प्रयोगशालाएँ')}</summary><div>
         <button aria-current={page === 'demo' ? 'page' : undefined} onClick={() => navigate('demo')}><PanelsTopLeft aria-hidden="true" />{strings.navDemo}</button>
         <button aria-current={page === 'agent' ? 'page' : undefined} onClick={() => navigate('agent')}><Bot aria-hidden="true" />{strings.navAgent}</button>
         <button aria-current={page === 'crypto' ? 'page' : undefined} onClick={() => navigate('crypto')}><FlaskConical aria-hidden="true" />{strings.navCrypto}</button>
-        {session ? <button onClick={() => navigate('account')}><LayoutDashboard aria-hidden="true" />{strings.navAccount}</button> : <button onClick={() => navigate('login')}><LogIn aria-hidden="true" />{strings.navSignIn}</button>}
-      </nav>
+        </div></details>
+      </nav>}
     </header>
     {mockMode && <div className="banner" role="status">UI PREVIEW · No real passkeys, sessions, or security results. Accounts reset on refresh.</div>}
     
     <main id="content" ref={main} tabIndex={-1} style={{ maxWidth: '1320px', margin: '20px auto', padding: '0 24px' }}>
       {/* 4 Targeted Citizen Personas Guide */}
-      <PersonaGuide onSelectAction={targetPage => navigate(targetPage)} />
+      {page === 'demo' && <details className="persona-guide"><summary>{tr('Who is TrustX for? Explore four example journeys', 'TrustX किसके लिए है? चार उदाहरण देखें')}</summary><PersonaGuide onSelectAction={targetPage => targetPage === 'phone' ? setKiosk(true) : navigate(targetPage)} /></details>}
 
       <div className={wide ? 'workspace' : 'auth-layout'}>
         {!wide && page !== 'phone' && (
@@ -152,15 +159,16 @@ export default function App() {
           {restoring ? <p role="status">Checking your session…</p>
             : page === 'phishing' ? <PhishingLabPage />
             : page === 'phone' ? <KioskAuthPage />
+            : page === 'access' ? <AccessHelpPage onChoose={(target, key = false) => { setSecurityKey(key); if (target === 'kiosk') setKiosk(true); else navigate(target); }} />
             : page === 'demo' ? <DemoArenaPage session={session} onSignIn={() => navigate('login')} />
             : page === 'crypto' ? <CryptoLabPage user={session?.user} />
             : page === 'agent' ? session ? <AgentShieldPage user={session.user} /> : <section><h1>Sign in to authorize an agent</h1><p>Agent capabilities require a real session and passkey approval.</p><button onClick={() => navigate('login')}>Go to sign in</button></section>
             : session ? <>
-              <nav aria-label="Signed-in views"><button aria-current={page !== 'admin' ? 'page' : undefined} onClick={() => navigate('account')}>{strings.navAccount}</button>{session.user.role === 'ADMIN' && <button aria-current={page === 'admin' ? 'page' : undefined} onClick={() => navigate('admin')}>{strings.navAdminSOC}</button>}</nav>
+              {session.user.role === 'ADMIN' && <nav aria-label="Signed-in views"><button aria-current={page !== 'admin' ? 'page' : undefined} onClick={() => navigate('account')}>{strings.navAccount}</button><button aria-current={page === 'admin' ? 'page' : undefined} onClick={() => navigate('admin')}>{strings.navAdminSOC}</button></nav>}
               {page === 'admin' ? <AdminSOCPage user={session.user} /> : <DashboardPage session={session} onLogout={() => { setSession(null); navigate('login'); }} />}
             </> : <>
               <nav aria-label="Account access"><button aria-current={page === 'login' ? 'page' : undefined} onClick={() => navigate('login')}>{strings.navSignIn}</button><button aria-current={page === 'register' ? 'page' : undefined} onClick={() => navigate('register')}>{strings.navCreateAccount}</button><button aria-current={page === 'recovery' ? 'page' : undefined} onClick={() => navigate('recovery')}>{strings.navRecover}</button></nav>
-              {page === 'register' ? <RegisterPage onRegistered={setCodes} /> : page === 'recovery' ? <RecoveryPage onSignIn={() => navigate('login')} /> : <LoginPage onLogin={onAuthorized} />}
+              {page === 'register' ? <RegisterPage onRegistered={setCodes} securityKey={securityKey} /> : page === 'recovery' ? <RecoveryPage onSignIn={() => navigate('login')} /> : <LoginPage onLogin={onAuthorized} securityKey={securityKey} />}
               <button className="secondary kiosk-launch" onClick={() => setKiosk(true)}>{strings.navSharedTerminal}</button>
               {mockMode && <p className="hint">Preview sign-in: <code>demo</code> or <code>demo-admin</code>. Preview recovery code: <code>DEMO-ONLY-0001</code>.</p>}
             </>}

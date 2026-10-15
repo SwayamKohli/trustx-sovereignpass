@@ -10,6 +10,14 @@ import type { StepUpAuthorization } from '../db/schema';
 export interface StepUpOptions {
   alwaysEnforce?: boolean;
 }
+const approvedTokens = new WeakMap<Request, string>();
+// Call inside the same transaction as the protected mutation, never across an await.
+export function consumeStepUpAuthorization(req: Request) {
+  const token = approvedTokens.get(req);
+  if (!token) return;
+  const result = db.prepare('UPDATE step_up_authorizations SET consumed = 1 WHERE token = ? AND consumed = 0 AND expires_at > ?').run(token, Date.now());
+  if (result.changes !== 1) throw new Error('Step-up expired or concurrently consumed');
+}
 
 /**
  * Express middleware that evaluates deterministic risk signals and enforces request-bound single-use step-up tokens.
@@ -88,16 +96,7 @@ export function requireStepUpAuthorization(options: StepUpOptions = {}) {
         return res.status(403).json({ error: 'Step-up token intent hash mismatch: request payload altered' });
       }
 
-      // Atomically consume token
-      const result = db.prepare(`
-        UPDATE step_up_authorizations
-        SET consumed = 1
-        WHERE token = ? AND consumed = 0
-      `).run(stepUpToken);
-
-      if (result.changes === 0) {
-        return res.status(403).json({ error: 'Concurrent step-up consumption detected' });
-      }
+      approvedTokens.set(req, stepUpToken);
     }
 
     next();

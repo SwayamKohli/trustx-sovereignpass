@@ -1,12 +1,17 @@
 import { startAuthentication, startRegistration, browserSupportsWebAuthn } from '@simplewebauthn/browser';
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import { clearDeviceKey, createProof, publicDeviceKey } from './dpop';
+import { tr } from './i18n';
 import type { AttackReport, ChainReport, Credential, ActiveSession, AuditEvent, Device, KioskChallenge, KioskPoll, PhoneChallenge, RecoveryTicket, Session, User } from './types';
 export type { User } from './types';
 export type RegistrationResult = { success: true; recoveryCodes: string[] };
 export const mockMode = import.meta.env.MODE === 'mock';
 export class ApiError extends Error {
-  constructor(public status: number, public code = '') { super('API request failed'); }
+  constructor(public status: number, public code = '', public details: Record<string, unknown> = {}) { super('API request failed'); }
+}
+export type LoginCheck = { pendingId: string; authenticationOptions: PublicKeyCredentialRequestOptionsJSON; risk: { score: number; level: string; reasons: string[] } };
+export class LoginCheckRequired extends Error {
+  constructor(public check: LoginCheck) { super('Extra passkey verification required'); }
 }
 type ErrorBody = { error?: string; intentId?: string; intentHash?: string; stepUpOptions?: PublicKeyCredentialRequestOptionsJSON };
 
@@ -21,7 +26,7 @@ async function decode<T>(response: Response, protectedRequest: boolean): Promise
   if (!response.ok) {
     const data: ErrorBody = await response.json().catch(() => ({}));
     if (protectedRequest && response.status === 401) window.dispatchEvent(new Event('trustx-session-ended'));
-    throw new ApiError(response.status, data.error);
+    throw new ApiError(response.status, data.error, data);
   }
   if (response.status === 204) return undefined as T;
   return response.json();
@@ -47,19 +52,19 @@ export async function request<T>(path: string, body?: unknown, protectedRequest 
 }
 export function friendlyError(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.status === 401) return 'Your session or passkey could not be verified. Please sign in again.';
-    if (error.status === 429) return 'Too many attempts. Please wait before trying again.';
-    if (error.status === 403) return 'Permission or fresh passkey approval is required. Please try again.';
+    if (error.status === 401) return tr("Your session or passkey could not be verified. Please sign in again.", "आपके सत्र या पासकी की पुष्टि नहीं हुई। दोबारा साइन इन करें।");
+    if (error.status === 429) return tr("Too many attempts. Please wait before trying again.", "बहुत अधिक कोशिशें हुईं। फिर प्रयास करने से पहले प्रतीक्षा करें।");
+    if (error.status === 403) return tr("Permission or fresh passkey approval is required. Please try again.", "अनुमति या नई पासकी मंज़ूरी चाहिए। फिर प्रयास करें।");
     if (error.status === 404) {
-      if (error.code && error.code.toLowerCase().includes('user')) return 'Username not registered. Please create an account first.';
-      return 'This service is not available on the connected backend yet.';
+      if (error.code && error.code.toLowerCase().includes('user')) return tr("Username not registered. Please create an account first.", "उपयोगकर्ता नाम पंजीकृत नहीं है। पहले खाता बनाएँ।");
+      return tr("This service is not available on the connected backend yet.", "जुड़े बैकएंड पर यह सेवा उपलब्ध नहीं है।");
     }
-    if (error.status === 400) return 'The request is invalid, expired, or already used. Check your details and try again.';
-    return 'The service is unavailable. Please try again later.';
+    if (error.status === 400) return tr("The request is invalid, expired, or already used. Check your details and try again.", "अनुरोध अमान्य, समाप्त या इस्तेमाल हो चुका है। जानकारी जाँचकर फिर कोशिश करें।");
+    return tr("The service is unavailable. Please try again later.", "सेवा उपलब्ध नहीं है। बाद में फिर कोशिश करें।");
   }
-  if (error instanceof Error && ['NotAllowedError', 'AbortError'].includes(error.name)) return 'The passkey prompt was cancelled or timed out. You can try again.';
-  if (error instanceof Error && error.name === 'InvalidStateError') return 'A passkey may already exist on this device. Try signing in.';
-  return 'Unable to complete this action. Check your connection and browser storage, then try again.';
+  if (error instanceof Error && ['NotAllowedError', 'AbortError'].includes(error.name)) return tr("The passkey prompt was cancelled or timed out. You can try again.", "पासकी संदेश रद्द हुआ या समय समाप्त हुआ। फिर कोशिश कर सकते हैं।");
+  if (error instanceof Error && error.name === 'InvalidStateError') return tr("A passkey may already exist on this device. Try signing in.", "इस डिवाइस पर पासकी पहले से हो सकती है। साइन इन करके देखें।");
+  return tr("Unable to complete this action. Check your connection and browser storage, then try again.", "कार्रवाई पूरी नहीं हुई। कनेक्शन और ब्राउज़र संग्रह जाँचकर फिर कोशिश करें।");
 }
 function checkBrowser() {
   if (!window.isSecureContext || !browserSupportsWebAuthn()) throw new Error('WebAuthn unavailable');
@@ -70,11 +75,11 @@ function requireSession(result: Session): Session {
   if (result.isKiosk && (typeof result.expiresAt !== 'number' || !Number.isFinite(result.expiresAt))) throw new Error('Missing kiosk expiry');
   return result;
 }
-export async function register(username: string): Promise<RegistrationResult> {
+export async function register(username: string, securityKey = false): Promise<RegistrationResult> {
   let attestationResponse;
   if (!mockMode) {
     checkBrowser();
-    const optionsJSON = await request<PublicKeyCredentialCreationOptionsJSON>('/auth/register-challenge', { username }, false);
+    const optionsJSON = await request<PublicKeyCredentialCreationOptionsJSON>('/auth/register-challenge', { username, ...(securityKey ? { authenticator: 'security-key' } : {}) }, false);
     attestationResponse = await startRegistration({ optionsJSON });
   }
   const result = await request<RegistrationResult>('/auth/register-verify', { username, attestationResponse }, false);
@@ -82,16 +87,31 @@ export async function register(username: string): Promise<RegistrationResult> {
   if (!Array.isArray(result.recoveryCodes) || result.recoveryCodes.length !== 8 || !result.recoveryCodes.every(code => typeof code === 'string')) throw new Error('Invalid registration response');
   return result;
 }
-export async function login(username: string): Promise<User> {
+export async function login(username: string, securityKey = false): Promise<User> {
   let assertionResponse;
   if (!mockMode) {
     checkBrowser();
     const optionsJSON = await request<PublicKeyCredentialRequestOptionsJSON>('/auth/login-challenge', { username }, false);
+    if (securityKey) optionsJSON.hints = ['security-key'];
     assertionResponse = await startAuthentication({ optionsJSON });
   }
-  const result = await request<{ success: boolean } & Session>('/auth/login-verify', { username, assertionResponse, dpopPublicKey: mockMode ? undefined : await publicDeviceKey() }, false);
+  let result: { success: boolean } & Session;
+  try { result = await request('/auth/login-verify', { username, assertionResponse, dpopPublicKey: mockMode ? undefined : await publicDeviceKey() }, false); }
+  catch (error) {
+    if (error instanceof ApiError && error.code === 'LOGIN_EXTRA_CHECK_REQUIRED') {
+      const check = error.details as unknown as LoginCheck;
+      if (!check.pendingId || !check.authenticationOptions?.challenge || !Array.isArray(check.risk?.reasons)) throw new Error('Invalid login check');
+      throw new LoginCheckRequired(check);
+    }
+    throw error;
+  }
   requireSuccess(result);
   return requireSession(result).user;
+}
+export async function finishLoginCheck(check: LoginCheck): Promise<User> {
+  const assertionResponse = await startAuthentication({ optionsJSON: check.authenticationOptions });
+  const result = await request<{ success: boolean } & Session>('/auth/login-extra-verify', { pendingId: check.pendingId, assertionResponse }, false);
+  requireSuccess(result); return requireSession(result).user;
 }
 export async function currentSession(): Promise<Session> { return requireSession(await request('/auth/session')); }
 export async function logout(): Promise<void> {
@@ -111,8 +131,8 @@ export async function completeRecovery(username: string, ticket: RecoveryTicket)
   const result = await request<{ success: boolean }>('/recovery/complete', { username, recoveryTicket: ticket.recoveryTicket, attestationResponse, dpopPublicKey: mockMode ? undefined : await publicDeviceKey() }, false);
   requireSuccess(result);
 }
-export async function addDevice(deviceName: string): Promise<void> {
-  const optionsJSON = await request<PublicKeyCredentialCreationOptionsJSON>('/devices/register-challenge', {});
+export async function addDevice(deviceName: string, securityKey = false): Promise<void> {
+  const optionsJSON = await request<PublicKeyCredentialCreationOptionsJSON>('/devices/register-challenge', securityKey ? {authenticator:'security-key'} : {});
   const attestationResponse = mockMode ? undefined : await startRegistration({ optionsJSON });
   requireSuccess(await request('/devices/register-verify', { deviceName, attestationResponse }));
 }

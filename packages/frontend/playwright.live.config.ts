@@ -5,6 +5,7 @@ import path from 'node:path';
 const databasePath = path.join(mkdtempSync(path.join(tmpdir(), 'trustx-e2e-')), 'bank.sqlite');
 export default defineConfig({
   testDir: './e2e-live',
+  outputDir: './test-results-live',
   workers: 1,
   timeout: 60_000,
   metadata: { databasePath },

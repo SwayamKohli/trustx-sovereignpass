@@ -176,12 +176,29 @@ router.post('/audit-chain/verify', requireAdminRole, (req: Request, res: Respons
 });
 
 let latestReport: LiveReport | undefined;
+router.post('/login-history', requireAdminRole, (req, res) => {
+  const username = typeof req.body.username === 'string' ? req.body.username.trim().slice(0,100) : '';
+  const page = req.body.page ?? 0;
+  if (!Number.isInteger(page) || page < 0 || page > 100_000) return res.status(400).json({ error: 'INVALID_HISTORY_PAGE' });
+  const types = ['AUTH_LOGIN_SUCCESS','AUTH_VERIFY_FAILED','PHISHING_ORIGIN_REJECTED','LOGIN_EXTRA_CHECK_REQUIRED','LOGIN_EXTRA_CHECK_REJECTED'];
+  const where = `a.type IN (${types.map(() => '?').join(',')}) AND (? = '' OR u.username = ?)`;
+  const parameters = [...types, username, username];
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM audit_events a LEFT JOIN users u ON u.id = a.user_id WHERE ${where}`).get(...parameters) as {n:number}).n;
+  const rows = db.prepare(`SELECT a.id,a.type,a.timestamp,a.detail,u.username FROM audit_events a LEFT JOIN users u ON u.id = a.user_id WHERE ${where} ORDER BY a.timestamp DESC, a.rowid DESC LIMIT 25 OFFSET ?`).all(...parameters,page*25) as {id:string;type:string;timestamp:string;detail:string;username:string|null}[];
+  return res.json({ total, page, pageSize:25, entries:rows.map(row => {
+    let detail: Record<string, unknown> = {};
+    try { detail = JSON.parse(row.detail || '{}'); } catch { /* Legacy malformed details are not trusted. */ }
+    return { id:row.id, username:row.username, eventType:row.type, timestamp:row.timestamp, ipAddress:detail.ipAddress || detail.ip || null, userAgent:detail.userAgent || null, risk:detail.risk || null, outcome:row.type === 'AUTH_LOGIN_SUCCESS' ? 'SIGNED_IN' : row.type === 'LOGIN_EXTRA_CHECK_REQUIRED' ? 'EXTRA_CHECK_REQUIRED' : 'REJECTED' };
+  }) });
+});
 let running = false;
 router.get('/attack-results', requireAdminRole, (_req, res) => latestReport ? res.json(latestReport) : res.status(404).json({ error: 'NO_PROBE_RUN_YET' }));
-router.post('/attacks/run', requireAdminRole, async (_req, res) => {
+router.post('/attacks/run', requireAdminRole, async (req, res) => {
+  const probeId = req.body.probeId;
+  if (probeId !== undefined && !/^(?:[1-9]|10)$/.test(String(probeId))) return res.status(400).json({ error: 'INVALID_PROBE_ID' });
   if (running) return res.status(409).json({ error: 'A probe run is already in progress' });
   running = true;
-  try { latestReport = await runLiveProbes(); return res.json(latestReport); }
+  try { latestReport = await runLiveProbes(probeId === undefined ? undefined : String(probeId)); return res.json(latestReport); }
   catch { return res.status(500).json({ error: 'PROBE_RUN_FAILED' }); }
   finally { running = false; }
 });

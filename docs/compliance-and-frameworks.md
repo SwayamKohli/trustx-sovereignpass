@@ -1,5 +1,7 @@
 # TrustX SovereignPass — Statutory Compliance, Security Frameworks & Defensible Claims Guide
 
+> Historical research and pitch guidance, not a legal opinion or implementation attestation. Current claims are limited by [the threat model](security/THREAT_MODEL.md) and [final runbook](final-evaluation.md). Configurable retention, NTP configuration, WCAG conformance, AAL assurance, legal compliance and tamper-proof storage have not been established by this prototype. WebAuthn still requires a credential database; this server stores recovery hashes, session secrets and identifiers as well as public keys. No live LLM or quantum-safe login is connected. Use measured benchmark output, not illustrative counts/sizes below. This document has not been revalidated as current legal advice.
+
 **Definitive Guide to Indian Regulations, International Standards, and Judge-Proof Claims for CyberCup 6.0 (CC6-IC04)**
 
 ---

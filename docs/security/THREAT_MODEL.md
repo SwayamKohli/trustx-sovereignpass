@@ -1,69 +1,74 @@
-# TrustX SovereignPass — STRIDE Threat Model & Security Assurance Architecture
-**CyberCup 6.0 | Problem CC6-IC04: Next-Generation Passwordless Authentication**  
-**Role:** Adnan (Role 1 — Security Lead & Attack/Defense Engineer) & Swayam (Role 4 — Systems Integration)
+# TrustX SovereignPass — current threat model
 
----
+This describes the final-evaluation implementation, not the earlier roadmap. TrustX is a local hackathon/reference application, not a certified identity provider, bank or network firewall.
 
-## 1. System Scope & Trust Boundaries
+## Assets and trust boundaries
 
-TrustX SovereignPass re-architects digital citizen banking and public workstation access around cryptographic proof-of-possession, replacing credential-stealing vulnerable factors (passwords, SMS OTPs, static bearer session cookies).
+- The WebAuthn authenticator controls its credential private key and user-verification procedure. The server stores public keys and counters, not biometric templates or the authenticator PIN. Synced and platform passkeys are not automatically hardware-bound.
+- A separate non-extractable WebCrypto browser key signs protected API requests. It is stored through IndexedDB; non-extractability is an API property, not proof of TPM/Secure Enclave storage.
+- The backend owns sessions, authorization decisions, recovery hashes, known login contexts and sandbox state.
+- The bank and attacker lab use different hosts. The attacker lab accepts invented demonstration credentials only by operator convention; never enter real secrets.
+- The browser displays transaction details. It is not an independent trusted display if the genuine origin is compromised.
+- SQLite and stored audit anchors are inside the server's trust boundary. A full database/server compromise can change both.
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   UNTRUSTED INTERNET                                   │
-│  Adversary in the Middle (Evilginx) · DNS Spoofing · Infostealers (RedLine/Lumma)       │
-└───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ TLS 1.3 Termination (mkcert / CA Root)
-┌───────────────────────────────────────────▼────────────────────────────────────────────┐
-│ CLIENT TRUST BOUNDARY (Citizen Browser / Mobile)                                      │
-│  - Non-extractable WebCrypto ECDSA P-256 Keypair (IndexedDB / memory)                 │
-│  - W3C WebAuthn Authenticator (Apple Secure Enclave, Windows Hello, YubiKey 5 Series) │
-└───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ DPoP HTTP Proofs + Encrypted Sessions
-┌───────────────────────────────────────────▼────────────────────────────────────────────┐
-│ GATEWAY TRUST BOUNDARY (TrustX SovereignPass Core)                                    │
-│  - Origin Enforcement & Challenge Store (Single-Use TTL: 60s)                         │
-│  - DPoP Proof Validator (Method, Path, JTI Cache, Replay Defense)                      │
-│  - Contextual Risk Engine & Request-Bound Step-Up Controller                           │
-│  - AI Agent Capability Gateway (HMAC-SHA256 Parameter Bounds)                         │
-│  - SHA-256 Chained Tamper-Evident Forensic Audit Ledger                               │
-│  - Frozen SQLite Database (Argon2id Recovery Hashes, Active/Revoked Credentials)       │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+## Covered attacks and evidence
 
----
+| Threat | Implemented boundary | How it is checked |
+| --- | --- | --- |
+| Look-alike site tries to use a bank passkey | Browser RP checks and server challenge/origin/RP verification | Real browser wrong-RP request; actual verifier rejection; valid positive-control login |
+| Old authentication assertion is replayed | Short-lived, single-use challenges and WebAuthn counter checks where supported | Repeat an actual signed login assertion; no new cookie |
+| Session cookie is copied without its browser key | Mandatory method/path/time/identifier-bound ES256 proof for protected sessions | Actual cookie-only request denied; fresh proof accepted; reused proof denied |
+| Proof is replayed after server restart | Persistent unique proof identifiers with expiry | Independent-process restart test against the same temporary database |
+| Network/browser login context changes | Server compares successful history; no new session until another fresh, user-verified passkey assertion | Changed-browser/network HTTP tests; browser cancellation and confirmation journey |
+| An authenticated client enrolls a new device without approval | Existing-passkey step-up creates one session-bound registration ceremony; kiosk enrollment forbidden | Missing approval and fabricated attestation denied; approved enrollment succeeds |
+| A lost credential or terminal session is reused | Server checks active credential/session state; revocation removes associated sessions; kiosk sessions retain their approving credential | Revoked assertion, terminated/expired session, revoked kiosk approval and claimed-session tests |
+| A recovery code/ticket is reused | Argon2id hashes, bounded verification attempts and transactional one-time completion | Code reuse rejected; browser cancellation then completion; expiry rechecked at commit |
+| Old recovery material is used after code replacement | Fresh passkey approval; old codes and pending tickets invalidated in the same transaction | HTTP rotation and browser old-code rejection checks |
+| Approved action parameters are changed | IntentLock checks exact route/action, actor, session, recipient, amount, expiry and status | Actual HTTP altered-recipient/amount denial and unchanged ledger |
+| Approval is reused or requests race | Capability consumption, sandbox payment and audit commit together in an immediate transaction | Two concurrent requests produce one payment; replay denied; forced ledger failure rolls back permission |
+| Audit rows are edited or deleted | Stored SHA-256 anchors compared with current history | Edit/deletion tests and server-side verification |
+| Clickjacking or cached recovery/API responses | Frame-ancestor restriction and no-store API responses | Normal-stack HTTP header checks; not a complete XSS policy |
 
-## 2. Comprehensive STRIDE Threat Matrix
+The session proof protocol deliberately uses a path-only target. It is not full OAuth RFC 9449 implementation. Challenges, origin checks and assertions are not replaced by UI risk labels.
 
-| STRIDE Category | Threat Description | Attack Vector / Scenario | TrustX Cryptographic Defense & Architectural Mitigation | Evaluation 2 Validation Probe |
-| :--- | :--- | :--- | :--- | :--- |
-| **Spoofing (Identity)** | Phishing & Lookalike Domain Relay | Attacker sets up `https://b4nk-secure.local:3001` with valid TLS and lures citizen. | **Two-Layer Origin Isolation:**<br>1. Client-Side: W3C WebAuthn §5.1.3 refuses to touch authenticator credentials registered to `bank.local`.<br>2. Server-Side: `verifyAuthenticationResponse` asserts signed `clientDataJSON.origin === EXPECTED_ORIGIN`. | **Probe 1:** Origin Mismatch Probe rejects relayed assertion. |
-| **Tampering** | Session Cookie Theft & Infostealer Replay | Infostealer malware dumps `session_id` cookie from browser and replays from terminal. | **RFC 9449 DPoP Device Binding:**<br>Every protected API call requires a live WebCrypto private key signature over `(method, path, jti, iat)`. Stolen cookies lack the hardware key. | **Probe 7:** Cookie replay without DPoP proof returns `401 Unauthorized (DPOP_PROOF_REQUIRED)`. |
-| **Tampering** | AI Agent Prompt Injection & Parameter Divergence | LLM agent is jailbroken by prompt injection to divert payment to `Attacker_Vault`. | **Cryptographic Capability Gateway:**<br>Agent must present an HMAC-SHA256 capability token signed with user passkey assertion, binding exact recipient, max amount, and single-use nonce. | **Probe 6:** Tampered recipient / amount rejected with `403 Forbidden (CAPABILITY_CONSTRAINT_VIOLATION)`. |
-| **Tampering** | Step-Up Authorization Bypassing | Attacker attempts sensitive action using expired step-up challenge or wrong path. | **Request-Bound Intent Hashing:**<br>Step-up token binds `SHA-256(method + route + body)`. Replay or cross-route reuse is rejected. | **Probe 8:** Tampered step-up intent rejected with `403 Forbidden`. |
-| **Repudiation** | Denying Financial Action or Device Revocation | User or rogue employee claims audit logs were falsified or deleted after breach. | **Tamper-Evident SHA-256 Chained Audit Ledger:**<br>Every event computes `hash = SHA256(prevHash + timestamp + type + userId + details)`. Modifying any past event breaks chain integrity. | **Audit Chain Verification:** `POST /api/admin/audit-chain/verify` asserts `intact: true`. |
-| **Information Disclosure** | Recovery Code Leakage in Database Dump | Attacker obtains database file and attempts to recover accounts using stored codes. | **Argon2id Cryptographic Code Hashing:**<br>Emergency codes are stored strictly as Argon2id hashes with unique salts. Verification is single-use and tickets expire in 300s. | **Probe 4:** Replayed or consumed recovery code permanently returns `400 Bad Request`. |
-| **Denial of Service** | Public Workstation Session Hijacking & Abandonment | Citizen leaves public bank terminal unattended without clicking logout. | **Ephemeral Kiosk Isolation:**<br>Kiosk sessions enforce strict 15-minute server-side TTL. Browser keys are deleted on session expiration, leaving zero residual authentication artifacts. | **Kiosk Expiry Check:** Terminal session invalidates at `expiresAt`. |
-| **Elevation of Privilege** | Replay of Stale Authenticator Signatures | Attacker records a valid passkey signature and replays it over the network. | **Monotonic Hardware Signature Counter:**<br>Server records `counter` for every credential. If received counter $\le$ stored counter, authenticator clone is detected and rejected. | **Probe 2:** Stale counter assertion rejected with `400 Authenticator Clone Detected`. |
+Login-context checks use observed IP address and User-Agent, not GPS or IP geolocation. These signals are spoofable and are not identity factors. The extra assertion checks presence/user verification again with the same passkey; it is not an independent second factor. Previous contexts are learned only after successful sign-in.
 
----
+## Recovery and inclusion policy
 
-## 3. Honest Residual Risk & Bounded Trust Declarations
+A user can use a device passkey, a compatible FIDO2 security key with supported user verification on a computer, or a trusted-device QR approval for a shared terminal. A basic phone by itself cannot execute this WebAuthn app. An ordinary USB storage drive cannot become a security key.
 
-To maintain absolute credibility with hackathon judges, TrustX acknowledges the following bounded residual risks:
+The access guide and core account/recovery/kiosk controls provide English/Hindi text. Optional spoken instructions use a matching local browser voice only. No speech service is contacted and private codes/account data are never included in spoken instructions. No matching installed voice means written instructions remain available; audio success is not fabricated.
 
-1. **Kernel/OS Compromise on Citizen Endpoint:**  
-   If an adversary possesses root / kernel-level code execution on the citizen's laptop, they can intercept unencrypted display pixels or hook user interactions. However, hardware security keys (Touch ID Secure Enclave, YubiKey) prevent extraction of private key bytes even under root compromise.
-2. **Post-Quantum Cryptography in Consumer Hardware:**  
-   While NIST finalized FIPS 204 (ML-DSA) in August 2024, consumer authenticators (phones and USB keys) do not yet natively execute ML-DSA-44 due to payload constraints (2,420-byte signatures). TrustX provides empirical migration benchmarks and is designed crypto-agile to adopt hybrid FIPS 204 FIDO2 extensions once standardized.
-3. **Kiosk Visual Shoulder Surfing:**  
-   A nearby observer can observe the 2-digit confirmation code on a shared terminal. TrustX mitigates this by requiring physical biometric touch on the user's personal smartphone before terminal session authorization occurs.
+Recovery codes are bearer secrets and can themselves be phished. They must be stored offline/private and never shared with an assistant, caller or support agent. If another passkey still works, the user can replace the code set after fresh passkey approval.
 
----
+If all passkeys and all codes are lost, recovery fails closed. There is no password, SMS, admin reset or fabricated identity-proofing bypass. An organization needing assisted identity proofing must establish and validate that separate process before deployment.
 
-## 4. Regulatory Alignment Matrix
+## Explicitly not covered
 
-- **RBI Master Direction on Digital Payment Security:** Eliminates reliance on SMS OTP for financial authorizations.
-- **CERT-In Cyber Security Directions (2022):** Tamper-evident chained audit ledger for forensic incident investigation.
-- **FIDO Alliance & W3C WebAuthn Level 3:** Phishing-resistant asymmetric public-key cryptography.
-- **NIST SP 800-63B AAL3:** Highest authenticator assurance level through hardware-backed cryptographic proof-of-possession.
+1. Same-origin XSS or malicious browser extensions invoking a non-extractable key, tricking approvals or reading recovery codes. The basic security headers are not a complete script CSP or XSS assessment.
+2. Full endpoint/root compromise, physical coercion, malicious authenticator firmware or an independently compromised passkey-sync account.
+3. QR relay/social engineering: a matching display code helps avoid mistakes, but does not establish physical proximity or defeat every approval relay.
+4. A real intercepted reverse-proxy attack. The standalone server-origin probe is a crafted assertion, explicitly not an intercepted valid browser signature.
+5. Live model prompt injection. No LLM is connected. Actual adversarial API requests test the execution boundary instead; a future agent must expose only approved tools/routes.
+6. Real financial settlement. Sandbox INR and the deliberately vulnerable comparison endpoint do not move money.
+7. Post-quantum authentication. The PQC page benchmarks ECDSA versus ML-DSA; it does not change WebAuthn authentication algorithms.
+8. Database administrator/server compromise rewriting both audit events and their anchors. Pre-upgrade history was anchored once, not independently validated.
+9. Zero forensic residue on public terminals. Server expiry/revocation ends access; browser/OS history, memory and forensic traces are not erased.
+10. Broad denial-of-service resistance, distributed deployment or a tamper-proof network perimeter. Existing recovery attempt limits are not comprehensive API abuse protection.
+
+## Before any real deployment
+
+- Complete actual platform-authenticator, physical security-key and real-phone trusted-HTTPS acceptance tests on target devices.
+- Validate translations, spoken instructions and recovery usability with the intended low-literacy users. Browser tests do not establish usability outcomes.
+- Use stable, reachable RP domains and trusted TLS. Phone and laptop need matching DNS/trust; localhost cannot be shared across devices.
+- Configure trusted reverse proxies explicitly before using forwarded IP signals. Do not trust arbitrary client-supplied forwarding headers.
+- Add deployment-appropriate abuse controls, monitoring, backup/restore drills, data retention/deletion rules, secret/OS hardening and dependency maintenance.
+- Obtain independent security review and assess relevant organizational/regulatory obligations. No AAL3, FIDO certification or full legal-compliance claim is made here.
+
+## Specification references
+
+- [W3C WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/): RP/origin binding, user verification and authenticator selection.
+- [W3C security-key hint explainer](https://github.com/w3c/webauthn/wiki/Explainer%3A-Hints-for-WebAuthn-Clients): hints guide browser UI; they do not prove hardware storage.
+- [Mozilla localService documentation](https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesisVoice/localService): local versus remote voices.
+
+For exact commands and the final rehearsal sequence, use [the final-evaluation runbook](../final-evaluation.md).

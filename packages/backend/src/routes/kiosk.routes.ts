@@ -2,6 +2,7 @@
 // Owner: Sanchit (Role 3 — Core Backend & Identity Lifecycle Lead)
 
 import { Router, Request, Response } from 'express';
+import { serializeDevicePublicKey } from '../middleware/dpop.middleware';
 import crypto from 'crypto';
 import {
   generateAuthenticationOptions,
@@ -30,13 +31,8 @@ router.post('/qr-challenge', (req: Request, res: Response) => {
     const kioskClientSecret = `sec_kiosk_poll_private_${crypto.randomBytes(16).toString('hex')}`;
     const token = `tok_single_use_${crypto.randomBytes(16).toString('hex')}`;
     const displayCode = crypto.randomInt(10, 100);
-    const publicKey = req.body.dpopPublicKey;
-    let deviceKey: string | null = null;
-    if (publicKey) {
-      if (publicKey.kty !== 'EC' || publicKey.crv !== 'P-256' || publicKey.d) return res.status(400).json({ error: 'Invalid public device key' });
-      crypto.createPublicKey({ key: publicKey, format: 'jwk' });
-      deviceKey = JSON.stringify(publicKey);
-    }
+    let deviceKey: string;
+    try { deviceKey = serializeDevicePublicKey(req.body.dpopPublicKey); } catch { return res.status(400).json({ error: 'VALID_PUBLIC_DEVICE_KEY_REQUIRED' }); }
     const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes validity
     const nowIso = new Date().toISOString();
 
@@ -122,6 +118,7 @@ router.post('/qr-auth-challenge', async (req: Request, res: Response) => {
     const options = await generateAuthenticationOptions({
       rpID: effectiveRpID,
       allowCredentials,
+      userVerification: 'required',
       timeout: 60000,
     });
 
@@ -135,6 +132,7 @@ router.post('/qr-auth-challenge', async (req: Request, res: Response) => {
     return res.json({
       challenge: options.challenge,
       allowCredentials: options.allowCredentials,
+      userVerification: 'required',
       timeout: 60000,
       displayCode: kiosk.display_code,
     });
@@ -207,7 +205,7 @@ router.post('/qr-authorize', async (req: Request, res: Response) => {
         counter: cred.counter,
         transports: cred.transports ? JSON.parse(cred.transports) : undefined,
       },
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified || !verification.authenticationInfo) {
@@ -219,17 +217,19 @@ router.post('/qr-authorize', async (req: Request, res: Response) => {
 
     // Update credential counter and advance kiosk status to AUTHORIZED atomically
     const authorizeTransaction = db.transaction(() => {
+      if (!db.prepare("SELECT id FROM credentials WHERE id = ? AND user_id = ? AND status = 'ACTIVE'").get(cred.id, kiosk.user_id)) throw new Error('Approving credential was revoked');
       db.prepare(`
         UPDATE credentials
         SET counter = ?, last_used_at = ?
         WHERE id = ?
       `).run(newCounter, nowIso, cred.id);
 
-      db.prepare(`
+      const authorized = db.prepare(`
         UPDATE kiosk_authorizations
-        SET status = 'AUTHORIZED'
-        WHERE kiosk_session_id = ? AND status = 'PENDING'
-      `).run(kioskSessionId);
+        SET status = 'AUTHORIZED', credential_id = ?
+        WHERE kiosk_session_id = ? AND status = 'PENDING' AND user_id = ? AND challenge = ? AND expires_at > ?
+      `).run(cred.id, kioskSessionId, kiosk.user_id, kiosk.challenge, Math.floor(Date.now() / 1000));
+      if (authorized.changes !== 1) throw new Error('Kiosk approval expired, changed or already used');
 
       db.prepare(`
         INSERT INTO audit_events (id, type, user_id, detail, timestamp)
@@ -296,6 +296,7 @@ router.post('/qr-poll', (req: Request, res: Response) => {
 
       // Atomic claim & session issuance
       const claimTransaction = db.transaction(() => {
+        if (!kiosk.credential_id || !db.prepare("SELECT id FROM credentials WHERE id = ? AND user_id = ? AND status = 'ACTIVE'").get(kiosk.credential_id, kiosk.user_id)) throw new Error('Approving credential was revoked; generate a new QR');
         const updateResult = db.prepare(`
           UPDATE kiosk_authorizations
           SET status = 'CLAIMED'
@@ -309,10 +310,11 @@ router.post('/qr-poll', (req: Request, res: Response) => {
         // Issue 15-minute ephemeral session with is_kiosk = 1
         db.prepare(`
           INSERT INTO sessions (id, user_id, credential_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at, dpop_public_key)
-          VALUES (?, ?, NULL, ?, ?, 1, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
         `).run(
           sessionId,
           kiosk.user_id,
+          kiosk.credential_id,
           nowIso,
           ephemeralExpiryMs,
           ipAddress,
@@ -365,6 +367,7 @@ router.post('/qr-poll', (req: Request, res: Response) => {
     return res.json({ status: kiosk.status });
   } catch (err: any) {
     console.error('[Kiosk] qr-poll error:', err);
+    if (err instanceof Error && err.message.startsWith('Approving credential was revoked')) return res.status(403).json({ error: 'KIOSK_APPROVAL_REVOKED' });
     return res.status(500).json({ error: err.message || 'Polling error' });
   }
 });

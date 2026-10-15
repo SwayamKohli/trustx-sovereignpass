@@ -1,5 +1,38 @@
 import { expect, test } from '@playwright/test';
 
+test('guided access is bilingual, offers a no-phone key path, and reads only static instructions with local voices',async({page})=>{
+  await page.addInitScript(()=>{
+    const spoken:{text:string;local:boolean}[]=[];
+    Object.defineProperty(window,'__spoken',{value:spoken});
+    class Utterance {text:string;voice?:SpeechSynthesisVoice;onend?:()=>void;constructor(text:string){this.text=text;}}
+    Object.defineProperty(window,'SpeechSynthesisUtterance',{configurable:true,value:Utterance});
+    Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{getVoices:()=>[{lang:'en-IN',name:'Local English',localService:true},{lang:'hi-IN',name:'Remote Hindi',localService:false}],addEventListener(){},removeEventListener(){},cancel(){},speak(u:Utterance){spoken.push({text:u.text,local:!!u.voice?.localService});setTimeout(()=>u.onend?.(),0);}}});
+  });
+  await page.goto('/access');
+  await expect(page.getByRole('heading',{name:'I have no smartphone',exact:true})).toBeVisible();
+  await page.getByText('Listen to instructions',{exact:true}).click();
+  await page.getByRole('button',{name:'Read aloud',exact:true}).click();
+  const spoken=await page.evaluate(()=>(window as unknown as {__spoken:{text:string;local:boolean}[]}).__spoken);
+  expect(spoken).toHaveLength(1);expect(spoken[0].local).toBe(true);expect(spoken[0].text).toContain('storage USB drive will not work');
+  await page.getByRole('button',{name:'Switch to Hindi'}).click();
+  await expect(page.getByRole('heading',{name:'अपने लिए सही तरीका चुनें'})).toBeVisible();
+  await expect(page.getByText('इस ब्राउज़र में इस भाषा की ऑफलाइन आवाज़ उपलब्ध नहीं है।',{exact:false})).toBeVisible();
+  expect(await page.getByRole('button',{name:'सुनाएँ',exact:true}).count()).toBe(0);
+  await page.getByRole('button',{name:'सुरक्षा कुंजी पंजीकृत करें',exact:true}).click();
+  await expect(page.getByLabel('पासकी का तरीका')).toHaveValue('security-key');
+  await page.getByLabel('उपयोगकर्ता नाम',{exact:true}).fill('hindi-preview');
+  await page.getByRole('button',{name:'खाता बनाएँ',exact:true}).last().click();
+  await expect(page.getByRole('dialog')).toContainText('अपने आपातकालीन कोड सुरक्षित रखें');
+  await expect(page.getByRole('dialog').locator('code')).toHaveCount(8);
+  await expect(page.getByRole('button',{name:'साइन इन की ओर बढ़ें'})).toBeDisabled();
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button',{name:'साइन इन की ओर बढ़ें'}).click();
+  await page.getByRole('button',{name:'खाता पुनर्प्राप्ति',exact:true}).click();
+  await expect(page.getByLabel('आपातकालीन रिकवरी कोड')).toBeVisible();
+  await page.getByText('रिकवरी कोड नहीं है?',{exact:true}).click();
+  await expect(page.getByText('सभी पासकी और कोड खोने पर ऐप सुरक्षित रीसेट नहीं कर सकता।',{exact:false})).toBeVisible();
+});
+
 test('onboarding, saved-code gate, login, add/revoke device and sign out', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Create account', exact: true }).first().click();

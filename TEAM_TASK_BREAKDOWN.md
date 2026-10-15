@@ -1,4 +1,6 @@
 # TrustX SovereignPass — Team Ownership & Collaboration Guide
+
+> Original team plan. For the current final-evaluation implementation and acceptance evidence, use [the final runbook](docs/final-evaluation.md). Ananya's final integration spans the original ownership boundaries. The user explicitly authorized this final tested batch to be committed and pushed to main; the historical branch/ownership rules below describe the original collaboration arrangement. Capability internals and origin profiles have since changed; use the current contract rather than the old HMAC description.
 **File:** `TEAM_TASK_BREAKDOWN.md`  
 **Hackathon:** CyberCup 6.0 | Problem Statement: CC6-IC04  
 **Classification:** Internal Team Architectural Ownership, Interface Contracts & Collaboration Standards  

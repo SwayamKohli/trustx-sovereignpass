@@ -11,10 +11,10 @@ import deviceRoutes from '../routes/devices.routes';
 import recoveryRoutes from '../routes/recovery.routes';
 import agentRoutes from '../routes/agent.routes';
 
-export type LiveReport = { runId: string; timestamp: string; scope: string; probes: { id: string; name: string; status: 'PASS' | 'FAIL' | 'SKIPPED'; detail: string }[] };
+export type LiveReport = { runId: string; timestamp: string; scope: string; probes: { id: string; name: string; status: 'PASS' | 'FAIL' | 'SKIPPED'; detail: string; observations?: { path: string; httpStatus: number; reason: string; timestamp: string }[] }[] };
 
 // Exercise the production routers over HTTP with isolated fixture accounts, never a citizen's credentials.
-export async function runLiveProbes(): Promise<LiveReport> {
+export async function runLiveProbes(selectedId?: string): Promise<LiveReport> {
   const app = express();
   app.use(express.json(), cookieParser());
   app.use('/api/auth', authRoutes); app.use('/api/devices', deviceRoutes);
@@ -33,6 +33,7 @@ export async function runLiveProbes(): Promise<LiveReport> {
   const publicDeviceKey = device.publicKey.export({ format: 'jwk' });
   let counter = 0;
   let cookie = '';
+  let observations: NonNullable<LiveReport['probes'][number]['observations']> = [];
   const report: LiveReport = { runId: crypto.randomUUID(), timestamp: now, scope: 'Live HTTP checks of production routers using isolated software-authenticator fixtures; not a physical-key or reverse-proxy test.', probes: [] };
   function assertion(challenge: string, origin = base) {
     const client = Buffer.from(JSON.stringify({ type: 'webauthn.get', challenge, origin, crossOrigin: false }));
@@ -54,18 +55,26 @@ export async function runLiveProbes(): Promise<LiveReport> {
     if (authenticated) { headers.Cookie = cookie; headers.DPoP = proof(method, path); }
     const response = await fetch(`${base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
     const data = await response.json();
+    observations.push({ path, httpStatus: response.status, reason: data.reason || data.code || data.error || (response.ok ? 'REQUEST_ACCEPTED' : 'REQUEST_REJECTED'), timestamp: new Date().toISOString() });
     return { response, data, status: response.status };
   }
   async function check(id: string, name: string, run: () => Promise<string>) {
-    try { report.probes.push({ id, name, status: 'PASS', detail: await run() }); }
-    catch (error) { report.probes.push({ id, name, status: 'FAIL', detail: error instanceof Error ? error.message : 'Probe failed' }); }
+    if (selectedId && selectedId !== id && id !== '2') return;
+    observations = [];
+    let result: LiveReport['probes'][number];
+    try { result = { id, name, status: 'PASS', detail: await run(), observations }; }
+    catch (error) { result = { id, name, status: 'FAIL', detail: error instanceof Error ? error.message : 'Probe failed', observations }; }
+    if (!selectedId || selectedId === id) {
+      report.probes.push(result);
+      db.prepare('INSERT INTO audit_events (id,type,user_id,detail,timestamp) VALUES (?,?,?,?,?)').run(crypto.randomUUID(), 'ATTACK_PROBE_COMPLETED', userId, JSON.stringify({ runId: report.runId, ...result }), new Date().toISOString());
+    }
   }
   try {
     db.prepare("INSERT INTO users (id, username, role, created_at) VALUES (?, ?, 'USER', ?)").run(userId, userId, now);
     for (const id of [credentialId, backupId]) db.prepare("INSERT INTO credentials (id, user_id, public_key, counter, device_name, status, created_at, last_used_at) VALUES (?, ?, ?, 0, 'Isolated probe credential', 'ACTIVE', ?, ?)").run(id, userId, Buffer.from(cose), now, now);
     await check('1', 'Look-alike origin rejection', async () => {
       const { data } = await call('/api/auth/login-challenge', { username: userId });
-      const result = await call('/api/auth/login-verify', { username: userId, assertionResponse: assertion(data.challenge, 'https://b4nk-secure.local:3001') });
+      const result = await call('/api/auth/login-verify', { username: userId, assertionResponse: assertion(data.challenge, 'https://b4nk-secure.local:3001'), dpopPublicKey: publicDeviceKey });
       assert.equal(result.status, 401); assert.equal(result.response.headers.get('set-cookie'), null);
       assert.ok(db.prepare("SELECT id FROM audit_events WHERE user_id = ? AND type = 'PHISHING_ORIGIN_REJECTED'").get(userId));
       return 'HTTP 401; no session cookie; origin-rejection audit event confirmed.';
@@ -90,7 +99,7 @@ export async function runLiveProbes(): Promise<LiveReport> {
       db.prepare("UPDATE credentials SET status = 'REVOKED' WHERE id = ?").run(credentialId);
       try {
         const { data } = await call('/api/auth/login-challenge', { username: userId });
-        const result = await call('/api/auth/login-verify', { username: userId, assertionResponse: assertion(data.challenge) });
+        const result = await call('/api/auth/login-verify', { username: userId, assertionResponse: assertion(data.challenge), dpopPublicKey: publicDeviceKey });
         assert.equal(result.status, 401);
         return 'A fresh assertion using a revoked fixture credential was rejected: HTTP 401.';
       } finally { db.prepare("UPDATE credentials SET status = 'ACTIVE' WHERE id = ?").run(credentialId); }
@@ -98,7 +107,8 @@ export async function runLiveProbes(): Promise<LiveReport> {
     await check('5', 'Terminated session rejection', async () => {
       const id = `probe_terminated_${crypto.randomUUID()}`;
       db.prepare("INSERT INTO sessions (id, user_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at) VALUES (?, ?, ?, ?, 0, '127.0.0.1', 'Probe', ?)").run(id, userId, now, Date.now() + 60_000, Date.now());
-      assert.equal((await call('/api/auth/session', undefined, false, { Cookie: `session_id=${id}` })).status, 200);
+      db.prepare('UPDATE sessions SET dpop_public_key = ? WHERE id = ?').run(JSON.stringify(publicDeviceKey), id);
+      assert.equal((await call('/api/auth/session', undefined, false, { Cookie: `session_id=${id}`, DPoP: proof('GET', '/api/auth/session') })).status, 200);
       db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
       assert.equal((await call('/api/auth/session', undefined, false, { Cookie: `session_id=${id}` })).status, 401);
       return 'Session positive control: HTTP 200. Same cookie after server-side deletion: HTTP 401.';
@@ -110,8 +120,15 @@ export async function runLiveProbes(): Promise<LiveReport> {
       assert.equal(verified.status, 200);
       const capabilityToken = verified.data.capabilityToken;
       assert.equal((await call('/api/agent/execute-payment', { capabilityToken, paymentDetails: { recipient: 'Probe Attacker', amount: 20 } }, true)).status, 403);
-      assert.equal((await call('/api/agent/execute-payment', { capabilityToken, paymentDetails: { recipient: 'Probe Utility', amount: 5 } }, true)).status, 200);
-      return 'Passkey-authorized capability: tampered payment HTTP 403; permitted comparison payment HTTP 200. No real funds moved.';
+      const count = () => (db.prepare('SELECT COUNT(*) AS n FROM sandbox_payments WHERE user_id = ?').get(userId) as { n: number }).n;
+      assert.equal(count(), 0);
+      assert.equal((await call('/api/agent/execute-payment', { capabilityToken, paymentDetails: { recipient: 'Probe Utility', amount: 5 } }, true)).status, 403);
+      assert.equal(count(), 0);
+      const body = { capabilityToken, paymentDetails: { recipient: 'Probe Utility', amount: 10 } };
+      const results = await Promise.all([call('/api/agent/execute-payment', body, true), call('/api/agent/execute-payment', body, true)]);
+      assert.deepEqual(results.map(r => r.status).sort(), [200, 403]);
+      assert.equal(count(), 1);
+      return 'Altered recipient and altered amount: HTTP 403, unchanged ledger. Concurrent exact requests: one HTTP 200, one HTTP 403; exactly one persisted payment.';
     });
     await check('7', 'Stolen cookie and DPoP replay', async () => {
       const missing = await call('/api/devices/list', undefined, false, { Cookie: cookie });
@@ -134,6 +151,21 @@ export async function runLiveProbes(): Promise<LiveReport> {
       assert.equal((await call('/api/devices/revoke', body, true, headers)).status, 200);
       assert.equal((await call('/api/devices/revoke', body, true, headers)).status, 403);
       return 'No step-up: HTTP 403. Altered body: HTTP 403. Valid single-use token: HTTP 200. Reuse: HTTP 403.';
+    });
+    await check('9', 'Unauthorized device enrollment', async () => {
+      const result = await call('/api/devices/register-challenge', {}, true);
+      assert.equal(result.status, 403); assert.equal(result.data.error, 'STEP_UP_REQUIRED');
+      const fabricated = await call('/api/devices/register-verify', { attestationResponse: { id: 'fabricated' }, deviceName: 'Unauthorized' }, true);
+      assert.equal(fabricated.status, 400);
+      assert.equal((db.prepare('SELECT COUNT(*) AS n FROM credentials WHERE user_id = ?').get(userId) as { n: number }).n, 2);
+      return 'Authenticated session without fresh approval: HTTP 403. Fabricated enrollment: HTTP 400; no new credential persisted.';
+    });
+    await check('10', 'Expired session rejection', async () => {
+      const id = `probe_expired_${crypto.randomUUID()}`;
+      db.prepare("INSERT INTO sessions (id,user_id,created_at,expires_at,is_kiosk,ip_address,user_agent,last_active_at) VALUES (?,?,?,?,0,'127.0.0.1','Probe',?)").run(id,userId,now,Date.now()-1,Date.now());
+      const result = await call('/api/auth/session', undefined, false, { Cookie: `session_id=${id}` });
+      assert.equal(result.status, 401);
+      return 'Actually expired session submitted to production session route: HTTP 401.';
     });
   } finally {
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);

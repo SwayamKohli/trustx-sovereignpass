@@ -99,6 +99,7 @@ async function runBenchmark(): Promise<void> {
   let mlDsaKeyGenTotal = 0;
   let mlDsaSignTotal = 0;
   let mlDsaVerifyTotal = 0;
+  let publicKeyBytes = 0, privateKeyBytes = 0, signatureBytes = 0;
 
   // Warmup
   for (let i = 0; i < 10; i++) {
@@ -118,6 +119,7 @@ async function runBenchmark(): Promise<void> {
     const signature = ml_dsa44.sign(sampleChallenge, keys.secretKey);
     const t3 = performance.now();
     mlDsaSignTotal += t3 - t2;
+    publicKeyBytes = keys.publicKey.length; privateKeyBytes = keys.secretKey.length; signatureBytes = signature.length;
 
     const t4 = performance.now();
     const valid = ml_dsa44.verify(signature, sampleChallenge, keys.publicKey);
@@ -130,12 +132,12 @@ async function runBenchmark(): Promise<void> {
   const mlDsaMetrics: BenchmarkMetrics = {
     algorithm: 'ML-DSA-44 (NIST FIPS 204)',
     type: 'Post-Quantum (NIST FIPS 204)',
-    nistSecurityCategory: 'Level 2 (SHA-256 equivalent)',
+    nistSecurityCategory: 'NIST security category 2',
     quantumResistant: true,
     shorAlgorithmVulnerable: false,
-    publicKeyBytes: ml_dsa44.lengths.publicKey ?? 1312,
-    privateKeyBytes: ml_dsa44.lengths.secretKey ?? 2560,
-    signatureBytes: ml_dsa44.lengths.signature ?? 2420,
+    publicKeyBytes,
+    privateKeyBytes,
+    signatureBytes,
     avgKeyGenMs: mlDsaKeyGenTotal / ITERATIONS,
     avgSignMs: mlDsaSignTotal / ITERATIONS,
     avgVerifyMs: mlDsaVerifyTotal / ITERATIONS,
@@ -149,7 +151,7 @@ async function runBenchmark(): Promise<void> {
   console.log('| Metric | Classical ECDSA P-256 | Post-Quantum ML-DSA-44 | Delta / Tradeoff |');
   console.log('| :--- | :--- | :--- | :--- |');
   console.log(`| **NIST Specification** | FIPS 186-5 (Elliptic Curve) | FIPS 204 (Module-Lattice) | NIST PQC Standardized (2024) |`);
-  console.log(`| **Quantum Resistance** | ❌ Broken by Shor's Algo | ✅ Quantum-Resistant | Level 2 Security |`);
+  console.log(`| **Quantum Resistance** | Vulnerable to a sufficiently capable quantum computer | Designed for post-quantum resistance | Not quantum-safe WebAuthn login |`);
   console.log(`| **Public Key Size** | ${ecdsaMetrics.publicKeyBytes} bytes | ${mlDsaMetrics.publicKeyBytes} bytes | ${(mlDsaMetrics.publicKeyBytes / ecdsaMetrics.publicKeyBytes).toFixed(1)}x larger |`);
   console.log(`| **Private Key Size** | ${ecdsaMetrics.privateKeyBytes} bytes | ${mlDsaMetrics.privateKeyBytes} bytes | ${(mlDsaMetrics.privateKeyBytes / ecdsaMetrics.privateKeyBytes).toFixed(1)}x larger |`);
   console.log(`| **Signature Size** | ${ecdsaMetrics.signatureBytes} bytes | ${mlDsaMetrics.signatureBytes} bytes | ${(mlDsaMetrics.signatureBytes / ecdsaMetrics.signatureBytes).toFixed(1)}x larger |`);
@@ -161,11 +163,10 @@ async function runBenchmark(): Promise<void> {
 
   console.log('\n' + '='.repeat(80));
   console.log(' ARCHITECTURAL SYNTHESIS FOR JUDGES:');
-  console.log(' - WebAuthn currently standardizes ES256 (ECDSA P-256) and Ed25519 in authenticators.');
-  console.log(' - ML-DSA-44 provides mathematical quantum-immunity, but signature payloads (2,420 bytes)');
-  console.log('   are ~34x larger than ECDSA (71 bytes), creating NFC/BLE transmission overhead on tokens.');
-  console.log(' - TrustX SovereignPass is designed crypto-agile: ready to adopt hybrid post-quantum');
-  console.log('   FIDO2 credentials as soon as W3C/FIDO Alliance finalizes FIPS 204 authenticator extensions.');
+  console.log(' - This standalone benchmark does not change the application’s WebAuthn algorithms.');
+  console.log(` - Observed ML-DSA-44 signature: ${signatureBytes} bytes; ECDSA DER signature: ${ecdsaSigSize} bytes.`);
+  console.log(` - Measured signature payload ratio: ${(signatureBytes / ecdsaSigSize).toFixed(1)}x. Encodings differ.`);
+  console.log(' - No quantum attack, physical-token transport or hybrid-login integration was tested.');
   console.log('='.repeat(80) + '\n');
 }
 

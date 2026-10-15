@@ -10,19 +10,23 @@
 
 ## Overview
 
+For the final evaluation, start with [the current runbook and security contract](docs/final-evaluation.md). It includes IntentLock, real attack controls, test commands, the presentation sequence and explicit limits. Older roadmap documents are planning references, not implementation or compliance evidence.
+
 Authentication infrastructure faces critical challenges: credential harvesting, SIM swapping, and Adversary-in-the-Middle (AiTM) reverse-proxy phishing attacks bypass legacy passwords and SMS OTPs. Furthermore, the rapid adoption of autonomous AI agents introduces prompt-injection risks where compromised LLM agents can be manipulated into executing unauthorized transactions.
 
-**TrustX SovereignPass** is an architectural reference implementation engineered around W3C WebAuthn Level 3 standards, statutory data protection principles, and international identity guidelines. It replaces passwords and SMS OTPs with origin-bound cryptographic passkeys, enforces strict server-side session invalidation on shared machines, and provides challenge-bound authorization for delegated AI actions.
+**TrustX SovereignPass** is a working demonstration using WebAuthn passkeys, server-side shared-terminal session controls and challenge-bound authorization for delegated actions. It is not a certified identity provider, a production banking system or a connected AI agent. See the current threat model for the precise boundaries.
 
 ---
 
 ## Core Capabilities
 
-1. **Deterministic Phishing Resistance:** Cryptographically binds authentication to the relying party's exact origin and port (`https://bank.local:3000`), defeating look-alike phishing domains (`b4nk-secure.local:3001`).
+1. **Origin-Bound Phishing Resistance:** Authenticator RP-ID checks and server challenge/origin verification reject look-alike sites. The default laptop profile uses `http://localhost:3000`; the attacker uses the distinct `http://127.0.0.1:3001` host. Named-domain and phone profiles require trusted HTTPS.
 2. **Shared-Device Kiosk Security:** Provides 15-minute ephemeral server sessions via cross-device QR authentication without persisting credentials on public workstations.
 3. **Zero-Downgrade Account Recovery:** Eliminates SMS fallback in favor of high-entropy, single-use emergency recovery bearer secrets hashed via Argon2id and consumed atomically.
-4. **Challenge-Bound AI Delegation (Optional Extension):** The relying party binds proposed agent transactions into a single-use WebAuthn challenge. The user's biometric passkey authorizes this server-bound challenge, allowing the server to issue an HMAC capability token strictly enforced by an API gateway.
+4. **IntentLock Action Authorization:** Fresh passkey verification approves an exact sandbox operation. A persisted, session-bound opaque capability permits one matching execution; consumption, payment and audit commit atomically. Real adversarial API requests demonstrate the boundary; no live LLM is connected.
 5. **Post-Quantum Migration Benchmark (Optional Research Stretch):** An empirical benchmark evaluating NIST FIPS 204 (ML-DSA) key sizes, signing times, and verification latency against classical ECDSA P-256.
+6. **Guided Access and Recovery Readiness:** English/Hindi core guidance, optional local-only spoken instructions, explicit FIDO2-key choice, trusted-device QR access and fresh-passkey-protected recovery-code replacement. Basic phones alone cannot run WebAuthn.
+7. **Actual Context Checks and Admin History:** Changed IP/browser context requires explicit fresh passkey verification before login completes. SOC shows paginated, filterable real login events; it does not invent locations or risk results.
 
 ---
 
@@ -37,13 +41,15 @@ npm run dev
 
 This starts the bank, Vite frontend, and attacker lab together. With no local certificates, open **http://localhost:3000/demo**. The attacker is **http://127.0.0.1:3001/phishing**: use a separate window and keep the hosts distinct. `localhost` uses the browser's loopback secure-context exception; these are real backend requests, not preview mode. Do not use the internal Vite port for the live demo.
 
+Use Node 24. The launcher detects an already-running healthy stack and avoids duplicate servers. The uncluttered header keeps advanced tools under **Security labs**; the account separates devices, recovery/security and sandbox payments. For a real iPhone QR rehearsal, use [the HTTPS setup and test guide](docs/iphone-rehearsal.md) and `npm run dev:phone`; do not open a phone's own localhost.
+
 Register an account at the bank, save its recovery codes, and sign in. To enable SOC for a registered account, the local operator runs:
 
 ```sh
 npm run admin:grant -- your-username
 ```
 
-Refresh the bank and open `/admin` in another window. Use the demo arena to run cookie-replay comparisons, and the attacker site for dummy-password capture and browser/server origin tests. The SOC runner executes eight measured HTTP route checks using isolated software-authenticator fixtures. It does not replace the separate browser or physical-key tests. AgentShield requires real passkey authorization; its payments are sandbox records, not financial transfers. Crypto Lab never substitutes benchmark figures on failure.
+Refresh the bank and open `/admin` in another window. Use the demo arena for cookie-replay comparisons and individual attack controls, and the attacker site for synthetic-password capture and browser/server origin tests. The SOC runner executes ten measured HTTP route checks using isolated software-authenticator fixtures. It does not replace separate browser or physical-key tests. AgentShield contains IntentLock: real passkey authorization with a persistent sandbox ledger, not financial transfers. Crypto Lab never substitutes benchmark figures on failure.
 
 For the named HTTPS demo, install trusted certificates covering `bank.local` and `b4nk-secure.local` in `certs/cert.pem` and `certs/key.pem`, and resolve both names to `127.0.0.1` in `/etc/hosts`. Restart the stack and use the configured HTTPS origins throughout. Without that setup, use the working loopback URLs above rather than an unavailable HTTPS link. `LOCAL_HTTP=1 npm run dev` explicitly selects the loopback configuration.
 
@@ -125,11 +131,10 @@ Detailed specifications and implementation guides are available in the [`docs/`]
 
 ## Standards & Regulatory Alignment
 
-* **DPDP Act, 2023 & DPDP Rules, 2025:** Privacy-by-Design architecture. Biometric templates remain on-device; central database stores zero biometric data.
-* **CERT-In Cyber Security Directions (Rule 2(v)):** Append-only audit ledger with UTC timestamps modeling 180-day retention and incident response readiness.
-* **NIST SP 800-63B:** Informed by digital identity guidelines, modeling phishing-resistant multi-factor authentication (AAL2 platform passkeys and AAL3 hardware security key characteristics) without claiming formal lab certification.
-* **RBI Digital Payment Security Controls:** Contextual alignment with regulatory recommendations to phase out vulnerable SMS OTPs for high-assurance operations.
-* **NIST FIPS 204 (ML-DSA):** Empirical post-quantum signature evaluation measuring latency and payload overhead for migration readiness.
+* **Data minimization:** Authentication uses public-key verification; this server does not receive biometric templates. It does store usernames, credential metadata, recovery hashes, sessions and security events.
+* **Audit evidence:** UTC events and stored hash anchors support the demonstrated integrity checks. Enforced 180-day retention, clock synchronization and full-database tamper resistance are not established.
+* **Authentication assurance:** No FIDO certification, NIST AAL assessment, WCAG certification or legal/regulatory compliance determination has been obtained. Production readiness requires deployment-specific review, operations and independent testing.
+* **ML-DSA research:** The standalone benchmark measures signing/verification and payload trade-offs; it does not make WebAuthn login post-quantum or establish implementation certification.
 
 ---
 

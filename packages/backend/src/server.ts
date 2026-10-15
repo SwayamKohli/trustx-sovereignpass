@@ -18,6 +18,14 @@ import cryptoRoutes from './routes/crypto.routes';
 import demoRoutes from './routes/demo.routes';
 
 const app = express();
+app.use((req,res,next)=>{
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.setHeader('Referrer-Policy','no-referrer');
+  res.setHeader('Content-Security-Policy',"frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'");
+  res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');
+  if(req.path.startsWith('/api/'))res.setHeader('Cache-Control','no-store');
+  next();
+});
 
 // Initialize SQLite database and frozen schema on startup
 initDb();
@@ -40,8 +48,8 @@ const healthHandler = (req: express.Request, res: express.Response) => {
   res.json({
     status: 'HEALTHY',
     service: serverConfig.rpName,
-    rpId: serverConfig.rpId,
-    expectedOrigin: serverConfig.expectedOrigin,
+    rpId: demoOrigins().rpId,
+    expectedOrigin: demoOrigins().bankOrigin,
     timestamp: new Date().toISOString(),
   });
 };
@@ -90,10 +98,10 @@ if (ssl) {
   });
 } else {
   const httpServer = http.createServer(app);
-  httpServer.listen(serverConfig.port, () => {
+  httpServer.listen(serverConfig.port, '127.0.0.1', () => {
     console.log(`[TrustX SovereignPass] Dev HTTP server running at http://localhost:${serverConfig.port}`);
     console.log(`[TrustX SovereignPass] Note: SSL certs not found in certs/ directory.`);
-    console.log(`[TrustX SovereignPass] To enable hardware passkey authentication: run mkcert to generate certs/cert.pem and certs/key.pem`);
+    console.log(`[TrustX SovereignPass] Loopback supports passkeys. Named-domain HTTPS needs trusted certs/cert.pem and certs/key.pem.`);
   });
 }
 

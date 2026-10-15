@@ -3,7 +3,7 @@ vi.mock('@simplewebauthn/browser', () => ({ startRegistration: vi.fn(), startAut
 vi.mock('./dpop', () => ({ createProof: vi.fn(), publicDeviceKey: vi.fn(), clearDeviceKey: vi.fn() }));
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { createProof, publicDeviceKey, clearDeviceKey } from './dpop';
-import { ApiError, completeRecovery, friendlyError, login, logout, register, request, validateAttackReport, verifyRecovery } from './api';
+import { ApiError, completeRecovery, friendlyError, login, logout, register, request, validateAttackReport, verifyRecovery, LoginCheckRequired, finishLoginCheck } from './api';
 
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -17,6 +17,24 @@ afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs();
 function reply(body: unknown, status = 200) { fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status })); }
 
 describe('real passkey contracts', () => {
+  it('does not auto-approve changed-context login or return a fabricated session', async () => {
+    const check={pendingId:'pending',authenticationOptions:{challenge:'fresh'},risk:{score:45,level:'MEDIUM',reasons:['BROWSER_CONTEXT_CHANGED']}};
+    reply({challenge:'first'});reply({error:'LOGIN_EXTRA_CHECK_REQUIRED',...check},403);
+    vi.mocked(startAuthentication).mockResolvedValueOnce({id:'assertion'} as Awaited<ReturnType<typeof startAuthentication>>);
+    await expect(login('alice')).rejects.toBeInstanceOf(LoginCheckRequired);
+    expect(startAuthentication).toHaveBeenCalledTimes(1);expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.mocked(startAuthentication).mockRejectedValueOnce(new DOMException('cancelled','NotAllowedError'));
+    await expect(finishLoginCheck(check)).rejects.toMatchObject({name:'NotAllowedError'});
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it('requests an actual cross-platform registration route when a security key is chosen', async () => {
+    const options={challenge:'key-challenge',authenticatorSelection:{authenticatorAttachment:'cross-platform',userVerification:'required'}};
+    reply(options);reply({success:true,recoveryCodes:Array.from({length:8},(_,i)=>`code-${i}`)});
+    vi.mocked(startRegistration).mockResolvedValueOnce({id:'usb'} as Awaited<ReturnType<typeof startRegistration>>);
+    await register('alice',true);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({username:'alice',authenticator:'security-key'});
+    expect(startRegistration).toHaveBeenCalledWith({optionsJSON:options});
+  });
   it('passes server options to registration and returns eight server codes', async () => {
     const options = { challenge: 'server-challenge' };
     const attestation = { id: 'credential' };

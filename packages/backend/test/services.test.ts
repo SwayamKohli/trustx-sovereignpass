@@ -4,10 +4,17 @@
 import assert from 'assert';
 import crypto from 'crypto';
 import { RiskService } from '../src/services/risk.service';
-import { AgentService } from '../src/services/agent.service';
-import { verifyDPoPProof } from '../src/middleware/dpop.middleware';
+
 
 async function runTests() {
+  process.env.DB_PATH = ':memory:';
+  const { verifyDPoPProof } = await import('../src/middleware/dpop.middleware');
+  const { AgentService } = await import('../src/services/agent.service');
+  const { db } = await import('../src/db/index');
+  const now = new Date().toISOString();
+  db.prepare("INSERT INTO users (id,username,role,created_at) VALUES ('user_alice','alice','USER',?)").run(now);
+  db.prepare("INSERT INTO sessions (id,user_id,created_at,expires_at,ip_address,user_agent,last_active_at) VALUES ('test_session','user_alice',?,?,'127.0.0.1','Test',?)").run(now, Date.now()+60_000, Date.now());
+  const execute = (token: string, payment: { recipient: string; amount: number }) => AgentService.executeConstrainedAction(token, payment, { userId: 'user_alice', sessionId: 'test_session', action: 'POST /api/agent/execute-payment' });
   console.log('[TEST] Starting Risk Engine & Agent Delegation unit tests...');
 
   // ==========================================
@@ -71,8 +78,8 @@ async function runTests() {
   // 2. AI Agent Delegation Tests
   // ==========================================
   const intent = AgentService.createDelegationIntent({
-    userId: 'user_alice',
-    action: 'POST /api/v1/payments',
+    userId: 'user_alice', sessionId: 'test_session',
+    action: 'POST /api/agent/execute-payment',
     recipient: 'TataPower',
     maxAmount: 2000,
   });
@@ -82,20 +89,20 @@ async function runTests() {
 
   // Mint capability token
   const token = AgentService.mintCapabilityToken(intent);
-  assert.ok(token.includes('.'));
+  assert.strictEqual(token.length, 43);
 
   // Test authorized execution within bounds
-  const exec1 = AgentService.executeConstrainedAction(token, {
+  const exec1 = execute(token, {
     recipient: 'TataPower',
-    amount: 1450,
+    amount: 2000,
   });
   assert.strictEqual(exec1.success, true);
-  assert.strictEqual(exec1.executedAmount, 1450);
+  assert.strictEqual(exec1.executedAmount, 2000);
 
   // Test Replay Prevention (same token executed twice must fail)
   assert.throws(
     () => {
-      AgentService.executeConstrainedAction(token, {
+      execute(token, {
         recipient: 'TataPower',
         amount: 200,
       });
@@ -106,8 +113,8 @@ async function runTests() {
 
   // Test Prompt-Injection / Recipient Tampering Defense
   const intent2 = AgentService.createDelegationIntent({
-    userId: 'user_alice',
-    action: 'POST /api/v1/payments',
+    userId: 'user_alice', sessionId: 'test_session',
+    action: 'POST /api/agent/execute-payment',
     recipient: 'BSES_Delhi',
     maxAmount: 3000,
   });
@@ -116,7 +123,7 @@ async function runTests() {
   assert.throws(
     () => {
       // Attacker attempts to divert funds to attacker wallet
-      AgentService.executeConstrainedAction(token2, {
+      execute(token2, {
         recipient: 'Attacker_Evil_Wallet',
         amount: 3000,
       });
@@ -127,8 +134,8 @@ async function runTests() {
 
   // Test Amount Ceiling Breach Defense
   const intent3 = AgentService.createDelegationIntent({
-    userId: 'user_alice',
-    action: 'POST /api/v1/payments',
+    userId: 'user_alice', sessionId: 'test_session',
+    action: 'POST /api/agent/execute-payment',
     recipient: 'CollegeTuition',
     maxAmount: 15000,
   });
@@ -137,7 +144,7 @@ async function runTests() {
   assert.throws(
     () => {
       // Attacker attempts to execute 50,000 when approved limit is 15,000
-      AgentService.executeConstrainedAction(token3, {
+      execute(token3, {
         recipient: 'CollegeTuition',
         amount: 50000,
       });
@@ -231,8 +238,8 @@ async function runTests() {
 
   // Target 2: TrustX SovereignPass with Capability Token
   const trustxIntent = AgentService.createDelegationIntent({
-    userId: 'user_alice',
-    action: 'POST /api/v1/payments',
+    userId: 'user_alice', sessionId: 'test_session',
+    action: 'POST /api/agent/execute-payment',
     recipient: 'BSES_Electricity',
     maxAmount: 1800,
   });
@@ -241,7 +248,7 @@ async function runTests() {
   // Attempting the exact same prompt injection on TrustX throws CAPABILITY_VIOLATION
   assert.throws(
     () => {
-      AgentService.executeConstrainedAction(trustxToken, {
+      execute(trustxToken, {
         recipient: insecurePayload.recipient, // Divergent recipient
         amount: insecurePayload.amount,       // Divergent amount
       });

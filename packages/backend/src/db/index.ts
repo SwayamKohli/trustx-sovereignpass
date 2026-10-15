@@ -27,12 +27,17 @@ export function getDb(): Database.Database {
     // Idempotent migrations for existing databases
     const migrations = [
       'ALTER TABLE sessions ADD COLUMN dpop_public_key TEXT',
+      'ALTER TABLE sessions ADD COLUMN login_risk TEXT',
       'ALTER TABLE sessions ADD COLUMN is_kiosk INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE sessions ADD COLUMN ip_address TEXT NOT NULL DEFAULT "127.0.0.1"',
       'ALTER TABLE sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT "unknown"',
       'ALTER TABLE sessions ADD COLUMN last_active_at INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE recovery_codes ADD COLUMN consumed_at TEXT',
       'ALTER TABLE kiosk_authorizations ADD COLUMN dpop_public_key TEXT',
+      'ALTER TABLE kiosk_authorizations ADD COLUMN credential_id TEXT',
+      'ALTER TABLE delegation_intents ADD COLUMN session_id TEXT',
+      'ALTER TABLE delegation_intents ADD COLUMN intent_hash TEXT',
+      'ALTER TABLE delegation_intents ADD COLUMN token_hash TEXT',
     ];
     for (const sql of migrations) {
       try {
@@ -41,6 +46,7 @@ export function getDb(): Database.Database {
         // Column already exists or table not ready
       }
     }
+    dbInstance.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_delegation_token_hash ON delegation_intents(token_hash)');
     initializeAuditIntegrity(dbInstance);
   }
   return dbInstance;

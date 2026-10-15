@@ -11,7 +11,7 @@ async function main() {
   const { buildAuditLedger } = await import('../src/scripts/export-audit-log');
   for (let i = 0; i < 2; i++) {
     const report = await runLiveProbes();
-    assert.equal(report.probes.length, 8);
+    assert.equal(report.probes.length, 10);
     assert.deepEqual(report.probes.filter(probe => probe.status !== 'PASS'), []);
   }
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }).n, 0);
@@ -24,11 +24,31 @@ async function main() {
   assert.equal(buildAuditLedger().isTamperFree, true);
 
   const { default: adminRoutes } = await import('../src/routes/admin.routes');
+  const { default: cryptoRoutes } = await import('../src/routes/crypto.routes');
   const app = express(); app.use(express.json(), cookieParser()); app.use('/api/admin', adminRoutes);
+  app.use('/api/crypto', cryptoRoutes);
   const server = http.createServer(app);
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const benchmarkResponse = await fetch(`${address}/api/crypto/pqc-benchmark`);
+    assert.equal(benchmarkResponse.status, 200);
+    const benchmark = await benchmarkResponse.json() as any;
+    const { ml_dsa44 } = await import('@noble/post-quantum/ml-dsa.js');
+    const sampleKeys = ml_dsa44.keygen();
+    const sampleSignature = ml_dsa44.sign(new Uint8Array([1]), sampleKeys.secretKey);
+    assert.equal(benchmark.postQuantum.publicKeyBytes, sampleKeys.publicKey.length);
+    assert.equal(benchmark.postQuantum.privateKeyBytes, sampleKeys.secretKey.length);
+    assert.equal(benchmark.postQuantum.signatureBytes, sampleSignature.length);
+    const ratio = (sampleSignature.length / benchmark.classical.signatureBytes).toFixed(1);
+    assert.equal(benchmark.analysis.signatureRatio, Number(ratio));
+    assert.ok(benchmark.analysis.verdict.includes(`${ratio}x`));
+    assert.equal(benchmark.iterations, 20);
+    const capabilities = await (await fetch(`${address}/api/crypto/fido2-capabilities`)).json() as any;
+    assert.equal(capabilities.userVerificationRequirement, 'required');
+    assert.match(capabilities.scope, /not detection/);
+    assert.match(capabilities.dpopProofSpecification, /not full RFC 9449/);
+    assert.match(capabilities.pqcRoadmap, /no hybrid FIDO2 integration/);
     const id = crypto.randomUUID(); const session = crypto.randomUUID(); const now = new Date().toISOString();
     db.prepare("INSERT INTO users (id, username, role, created_at) VALUES (?, ?, 'USER', ?)").run(id, id, now);
     const keys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });

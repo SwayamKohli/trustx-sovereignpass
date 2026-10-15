@@ -17,18 +17,12 @@ declare global {
   }
 }
 
-// In-memory replay prevention cache: JTI -> expiresAt
-const dpopReplayCache = new Map<string, number>();
-
-// Clean up expired JTIs every 2 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [jti, exp] of dpopReplayCache.entries()) {
-    if (exp < now) {
-      dpopReplayCache.delete(jti);
-    }
-  }
-}, 2 * 60 * 1000).unref();
+export function serializeDevicePublicKey(value: unknown): string {
+  const key = typeof value === 'string' ? JSON.parse(value) : value;
+  if (!key || key.kty !== 'EC' || key.crv !== 'P-256' || key.d || typeof key.x !== 'string' || typeof key.y !== 'string' || Buffer.from(key.x, 'base64url').length !== 32 || Buffer.from(key.y, 'base64url').length !== 32) throw new Error('VALID_PUBLIC_DEVICE_KEY_REQUIRED');
+  crypto.createPublicKey({ key, format: 'jwk' });
+  return JSON.stringify({ kty: key.kty, crv: key.crv, x: key.x, y: key.y });
+}
 
 export interface DPoPVerificationResult {
   valid: boolean;
@@ -37,7 +31,7 @@ export interface DPoPVerificationResult {
 }
 
 /**
- * Pure cryptographic validator for DPoP proofs.
+ * Signature validator with persistent one-time proof tracking.
  * Validates JWT header, payload (htm, htu, iat, jti), freshness window, replay cache,
  * and ECDSA P-256 (ES256) signature against the device public key registered with the session.
  */
@@ -67,7 +61,7 @@ export function verifyDPoPProof(
 
     // 2. Decode and validate payload
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-    if (!payload.jti || typeof payload.jti !== 'string') {
+    if (!payload.jti || typeof payload.jti !== 'string' || payload.jti.length > 200) {
       return { valid: false, error: 'Missing or invalid jti in DPoP payload' };
     }
     if (!payload.htm || typeof payload.htm !== 'string') {
@@ -106,7 +100,9 @@ export function verifyDPoPProof(
     }
 
     // 5. Replay prevention check
-    if (dpopReplayCache.has(payload.jti)) {
+    const proofId = crypto.createHash('sha256').update(`${dpopPublicKeyJwkStr}:${payload.jti}`).digest('hex');
+    db.prepare('DELETE FROM used_device_proofs WHERE expires_at < ?').run(now);
+    if (db.prepare('SELECT id FROM used_device_proofs WHERE id = ?').get(proofId)) {
       return { valid: false, error: 'DPoP proof jti replay detected' };
     }
 
@@ -133,8 +129,9 @@ export function verifyDPoPProof(
       return { valid: false, error: 'DPoP cryptographic signature verification failed' };
     }
 
-    // Record jti in replay cache
-    dpopReplayCache.set(payload.jti, now + maxAgeMs);
+    // The uniqueness constraint arbitrates concurrent workers and survives a process restart.
+    const recorded = db.prepare('INSERT OR IGNORE INTO used_device_proofs (id,expires_at) VALUES (?,?)').run(proofId, proofTime + maxAgeMs);
+    if (recorded.changes !== 1) return { valid: false, error: 'DPoP proof jti replay detected' };
 
     return { valid: true, jti: payload.jti };
   } catch (err: any) {
@@ -162,6 +159,7 @@ export function requireDeviceBoundSession(req: Request, res: Response, next: Nex
   if (!session) {
     return res.status(401).json({ error: 'Session invalid or terminated' });
   }
+  if (!session.dpop_public_key) return res.status(401).json({ error: 'Browser-key binding required; sign in again', code: 'DEVICE_BINDING_REQUIRED' });
 
   const now = Date.now();
   if (session.expires_at < now) {

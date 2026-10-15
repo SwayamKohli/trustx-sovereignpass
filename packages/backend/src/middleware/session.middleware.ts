@@ -41,6 +41,8 @@ export function requireSession(req: Request, res: Response, next: NextFunction) 
   if (!sessionRow) {
     return res.status(401).json({ error: 'Unauthorized: invalid or terminated session' });
   }
+  // Legacy unbound sessions must sign in again; clients cannot opt out of browser-key proof.
+  if (!sessionRow.dpop_public_key) return res.status(401).json({ error: 'Sign in again to bind this session to your browser key', code: 'DEVICE_BINDING_REQUIRED' });
 
   // Check if credential is still ACTIVE (if credential_id is set)
   if (sessionRow.credential_id) {

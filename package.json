@@ -7,13 +7,15 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -k -n \"BANK,FRONTEND,ATTACKER\" -c \"cyan,magenta,red\" \"npm run dev --workspace=@trustx/backend\" \"npm run dev --workspace=@trustx/frontend\" \"npm run dev:phishing --workspace=@trustx/backend\"",
+    "dev": "node scripts/start-dev.cjs",
+    "dev:phone": "node --use-system-ca scripts/start-dev.cjs --phone",
+    "dev:stack": "concurrently -k -n \"BANK,FRONTEND,ATTACKER\" -c \"cyan,magenta,red\" \"npm run dev --workspace=@trustx/backend\" \"npm run dev --workspace=@trustx/frontend\" \"npm run dev:phishing --workspace=@trustx/backend\"",
     "admin:grant": "npm run admin:grant --workspace=@trustx/backend --",
     "dev:backend": "npm run dev --workspace=@trustx/backend",
     "dev:frontend": "npm run dev --workspace=@trustx/frontend",
     "dev:frontend:mock": "npm run dev:mock --workspace=@trustx/frontend",
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces",
+    "test": "node --test scripts/start-dev.test.cjs && npm run test --workspaces",
     "test:attacks": "npm run test:attacks --workspace=@trustx/backend",
     "dev:phishing": "npm run dev:phishing --workspace=@trustx/backend",
     "audit:export": "npm run audit:export --workspace=@trustx/backend",

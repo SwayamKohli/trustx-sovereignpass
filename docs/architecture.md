@@ -1,5 +1,7 @@
 # TrustX SovereignPass — Master System Architecture & Technical Specification
 
+> Historical design, not current implementation evidence. Use [the final-evaluation contract](final-evaluation.md) and [current threat model](security/THREAT_MODEL.md). IntentLock now uses a persisted opaque capability and exact amount matching, not the HMAC spending-ceiling design below. GuardianMesh is not implemented; no live LLM or quantum-safe login is connected. Benchmark values must come from the current runner, not old illustrative sizes/trial counts.
+
 **Project Codename:** TrustX SovereignPass  
 **Hackathon:** CyberCup 6.0 | Problem Statement: CC6-IC04 (Theme 1: IoT & Cyber Security)  
 **Classification:** Phishing-Resistant Passwordless Authentication with Shared-Device Session Security & Constrained AI-Agent Delegation  

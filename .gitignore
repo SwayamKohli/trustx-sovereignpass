@@ -25,10 +25,12 @@ out/
 # Environment and sensitive keys
 .env
 .env.local
+.env.phone
 .env.development.local
 .env.test.local
 .env.production.local
 certs/*.pem
+certs/*.cer
 certs/*.key
 !certs/.gitkeep
 
@@ -49,3 +51,4 @@ lerna-debug.log*
 # Raw documents & problem statement files
 *.pdf
 full_ps.txt
+test-results-live/

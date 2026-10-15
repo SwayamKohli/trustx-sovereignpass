@@ -24,19 +24,19 @@ export const translations = {
     personasSubtitle: 'Click any persona to see how TrustX protects their specific threat model:',
     p1Name: 'Sunita Sharma (62, Senior Citizen)',
     p1Threat: 'Target: Digital Arrest & SMS OTP Phishing',
-    p1Solution: 'Zero passwords or SMS OTPs over the phone. Offline Argon2id recovery cards prevent SIM-swap account takeover.',
+    p1Solution: 'No password or SMS login fallback. Save single-use recovery codes offline; the server stores Argon2id hashes. Never share a recovery code.',
     p2Name: 'Ramesh Patel (38, Rural Citizen)',
     p2Threat: 'Target: Cyber Café & Gramin CSC Kiosk Hijack',
-    p2Solution: '15-minute ephemeral shared session via QR code. Automatically self-destructs with zero tokens left on public PC.',
+    p2Solution: 'Approve a 15-minute terminal session from another device. Server-side expiry and logout end access; no passkey is enrolled on the terminal.',
     p3Name: 'Priya Verma (29, Fintech Prosumer)',
     p3Threat: 'Target: Infostealer Malware & Cookie Replay',
-    p3Solution: 'RFC 9449 DPoP hardware-bound session token + Automatic Biometric Step-Up on ₹50,000+ transfers.',
+    p3Solution: 'Browser-key proof rejects cookie-only replay. Fresh passkey approval is required for sandbox transfers of INR 10,000 or more. Not a full-device malware defense.',
     p4Name: 'Enterprise Treasury (Corporate Account)',
     p4Threat: 'Target: Autonomous AI Agent Prompt Injection',
-    p4Solution: 'AgentShield Capability Gateway enforces cryptographically bound recipient and ₹500 amount ceiling at kernel level.',
-    bankingTitle: 'Sovereign Banking Operations',
-    bankingSubtitle: 'Test real-world banking actions with contextual risk and step-up enforcement:',
-    accountBalance: 'Account Balance',
+    p4Solution: 'IntentLock verifies the exact approved recipient and amount at the backend, with session binding, expiry and single-use execution.',
+    bankingTitle: 'Sandbox banking operations',
+    bankingSubtitle: 'Test persisted sandbox payments and fresh passkey step-up. No real funds are transferred:',
+    accountBalance: 'Synthetic account balance',
     lowRiskBtn: 'Pay Electricity Bill (₹450) · Low Risk',
     highRiskBtn: 'Transfer ₹50,000 to New Beneficiary · Step-Up Enforced',
     stepUpNotice: 'High-value transactions (≥ ₹10,000) automatically demand a live FIDO2 biometric step-up passkey verification.',
@@ -73,17 +73,17 @@ export const translations = {
     personasSubtitle: 'किसी भी नागरिक प्रोफ़ाइल पर क्लिक करके उनका सुरक्षा मॉडल देखें:',
     p1Name: 'सुनीता शर्मा (62 वर्ष, वरिष्ठ नागरिक)',
     p1Threat: 'लक्ष्य: "डिजिटल अरेस्ट" और फर्जी ओटीपी कॉल से सुरक्षा',
-    p1Solution: 'कोई पासवर्ड या एसएमएस ओटीपी नहीं। फोन पर कोई कोड बोलने का जोखिम खत्म। ऑफलाइन कोड से सुरक्षित रिकवरी।',
+    p1Solution: 'पासवर्ड या एसएमएस से साइन इन नहीं। एक बार उपयोग वाले रिकवरी कोड ऑफलाइन सुरक्षित रखें और किसी को न बताएँ। सर्वर पर केवल Argon2id हैश रखे जाते हैं।',
     p2Name: 'रमेश पटेल (38 वर्ष, ग्रामीण नागरिक)',
     p2Threat: 'लक्ष्य: कॉमन सर्विस सेंटर (CSC) व साइबर कैफे कियोस्क सुरक्षा',
-    p2Solution: 'क्यूआर कोड द्वारा 15 मिनट का सुरक्षित अस्थायी सत्र। समय समाप्त होते ही कंप्यूटर से सभी डेटा स्वतः नष्ट।',
+    p2Solution: 'क्यूआर से 15 मिनट का अस्थायी सत्र मंज़ूर करें। लॉगआउट या सर्वर की समय सीमा पर पहुँच समाप्त; टर्मिनल पर पासकी नहीं बनती।',
     p3Name: 'प्रिया वर्मा (29 वर्ष, डिजिटल बैंकिंग)',
     p3Threat: 'लक्ष्य: मालवेयर और चोरी किए गए कुकी रीप्ले से सुरक्षा',
-    p3Solution: 'DPoP हार्डवेयर कुंजी बाइंडिंग और ₹50,000+ के बड़े लेनदेन पर स्वचालित टच आईडी स्टेप-अप प्रमाणीकरण।',
+    p3Solution: 'ब्राउज़र कुंजी का प्रमाण चोरी की कुकी के रीप्ले को रोकता है। ₹10,000 या अधिक के सैंडबॉक्स भुगतान पर नई पासकी मंज़ूरी चाहिए। यह पूरे डिवाइस के मालवेयर से रक्षा नहीं है।',
     p4Name: 'कॉर्पोरेट ट्रेजरी (एंटरप्राइज खाता)',
     p4Threat: 'लक्ष्य: स्वायत्त एआई एजेंट प्रॉम्ट-इंजेक्शन से सुरक्षा',
-    p4Solution: 'एजेंटशील्ड क्षमता गेटवे: पासकी द्वारा हस्ताक्षरित टोकन बिजली बोर्ड व ₹500 की अधिकतम सीमा को बाध्य करता है।',
-    bankingTitle: 'सॉवरेन बैंकिंग लेनदेन',
+    p4Solution: 'IntentLock बैकएंड पर मंज़ूर किए गए प्राप्तकर्ता और सटीक राशि, सत्र, समय सीमा और एक बार उपयोग की जाँच करता है।',
+    bankingTitle: 'सैंडबॉक्स बैंकिंग लेनदेन',
     bankingSubtitle: 'संदर्भित जोखिम स्कोर और स्टेप-अप बायोमेट्रिक प्रमाणीकरण का लाइव परीक्षण करें:',
     accountBalance: 'खाता शेष (बैलेंस)',
     lowRiskBtn: 'बिजली बिल भुगतान (₹450) · कम जोखिम (सीधा भुगतान)',
@@ -94,7 +94,7 @@ export const translations = {
     riskMedium: 'मध्यम जोखिम',
     riskHigh: 'उच्च जोखिम',
     ipBaseline: 'नेटवर्क आईपी बेसलाइन',
-    deviceBinding: 'डिवाइस हार्डवेयर बाइंडिंग',
+    deviceBinding: 'ब्राउज़र कुंजी से बाइंडिंग',
     stepUpThreshold: 'स्टेप-अप सीमा',
     evaluatedSignals: 'जांचे गए सुरक्षा संकेत',
     devicesHeading: 'आपके पंजीकृत उपकरण और पासकी',
@@ -108,7 +108,8 @@ export type TranslationSchema = {
   [K in keyof (typeof translations)['en']]: string;
 };
 
-let currentLang: Language = (typeof localStorage !== 'undefined' ? (localStorage.getItem('trustx_lang') as Language) : 'en') || 'en';
+let currentLang: Language = 'en';
+try { if (localStorage.getItem('trustx_lang') === 'hi') currentLang = 'hi'; } catch { /* Storage may be blocked in a shared browser. */ }
 
 export function getLanguage(): Language {
   return currentLang;
@@ -116,11 +117,16 @@ export function getLanguage(): Language {
 
 export function setLanguage(lang: Language): void {
   currentLang = lang;
-  if (typeof localStorage !== 'undefined') localStorage.setItem('trustx_lang', lang);
+  try { localStorage.setItem('trustx_lang', lang); } catch { /* Language still applies for this page. */ }
+  if (typeof document !== 'undefined') document.documentElement.lang = lang;
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('trustx-lang-changed', { detail: lang }));
 }
 
 export function t(): TranslationSchema {
   return translations[currentLang] || translations.en;
+}
+
+export function tr(english: string, hindi: string): string {
+  return currentLang === 'hi' ? hindi : english;
 }
 

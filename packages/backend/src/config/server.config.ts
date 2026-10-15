@@ -43,11 +43,11 @@ export const serverConfig: ServerConfig = {
   vitePort: parseInt(process.env.VITE_PORT || '5173', 10),
   rpName: process.env.RP_NAME || 'TrustX SovereignPass',
   rpId: process.env.RP_ID || 'bank.local',
-  expectedOrigin: process.env.EXPECTED_ORIGIN || 'https://bank.local:3000',
+  expectedOrigin: process.env.EXPECTED_ORIGIN || process.env.ORIGIN || 'https://bank.local:3000',
   fakePhishingOrigin: process.env.FAKE_PHISHING_ORIGIN || 'https://b4nk-secure.local:3001',
   certPaths: {
-    cert: path.resolve(REPO_ROOT, 'certs', 'cert.pem'),
-    key: path.resolve(REPO_ROOT, 'certs', 'key.pem'),
+    cert: path.resolve(REPO_ROOT, process.env.TRUSTX_CERT_FILE || 'certs/cert.pem'),
+    key: path.resolve(REPO_ROOT, process.env.TRUSTX_KEY_FILE || 'certs/key.pem'),
   },
 };
 

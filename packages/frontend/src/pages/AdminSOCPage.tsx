@@ -6,6 +6,7 @@ import { expiryMilliseconds } from '../services/types';
 import { usePolling } from '../services/usePolling';
 import { AuditFeed } from '../components/AuditFeed';
 import { Dialog } from '../components/Dialog';
+import { LoginHistory } from '../components/LoginHistory';
 export function AdminSOCPage({ user }: { user: User }) { return user.role === 'ADMIN' ? <SOC /> : <section><h1>Administrator access required</h1><p>Use an administrator account; no guest or local-address bypass is enabled.</p></section>; }
 function SOC() {
   const credentials = usePolling(adminCredentials);
@@ -18,7 +19,7 @@ function SOC() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [tab, setTab] = useState<'overview' | 'sessions' | 'credentials' | 'events'>('overview');
+  const [tab, setTab] = useState<'overview' | 'sessions' | 'credentials' | 'events' | 'history'>('overview');
   const [filter, setFilter] = useState('');
   const [eventPage, setEventPage] = useState(0);
   const latest = manualReport && (!report.data || Date.parse(manualReport.timestamp) >= Date.parse(report.data.timestamp)) ? manualReport : report.data;
@@ -40,15 +41,16 @@ function SOC() {
     <p className="hint">Sessions and events refresh every 5 seconds. Probe reports refresh every 10 seconds. A failed refresh leaves older data marked stale.</p>
     {mockMode && <p className="banner">Preview accounts and events only. No live security probes are executed.</p>}
     {error && <p role="alert" className="error">{error}</p>}{message && <p role="status">{message}</p>}
-    <div className="stats"><div><span>Credentials</span><strong>{credentials.data?.credentials.length ?? '—'}</strong></div><div><span>Active sessions</span><strong>{sessions.data?.sessions.length ?? '—'}</strong></div><div><span>Recent events loaded</span><strong>{logs.data?.logs.length ?? '—'}</strong></div><div><span>Risk Engine (Req 6)</span><strong style={{ color: '#38bdf8' }}>ENFORCED (Thr: 70)</strong></div></div>
-    <nav aria-label="SOC sections">{(['overview', 'sessions', 'credentials', 'events'] as const).map(value => <button key={value} aria-current={tab === value ? 'page' : undefined} onClick={() => setTab(value)}>{value === 'overview' ? 'Overview' : value === 'events' ? 'Audit events' : value === 'sessions' ? 'Active sessions' : 'Credentials'}</button>)}</nav>
+    <div className="stats"><div><span>Credentials</span><strong>{credentials.data?.credentials.length ?? '—'}</strong></div><div><span>Active sessions</span><strong>{sessions.data?.sessions.length ?? '—'}</strong></div><div><span>Recent events loaded</span><strong>{logs.data?.logs.length ?? '—'}</strong></div><div><span>Latest observed probes passed</span><strong>{latest ? `${latest.probes.filter(p => p.status === 'PASS').length} / ${latest.probes.length}` : 'Not run'}</strong></div></div>
+    <nav aria-label="SOC sections">{(['overview', 'sessions', 'credentials', 'history', 'events'] as const).map(value => <button key={value} aria-current={tab === value ? 'page' : undefined} onClick={() => setTab(value)}>{value === 'overview' ? 'Overview' : value === 'events' ? 'Audit events' : value === 'sessions' ? 'Active sessions' : value === 'history' ? 'Login history' : 'Credentials'}</button>)}</nav>
+    {tab === 'history' && <LoginHistory />}
     {tab === 'overview' && <div className="soc-overview">
       <section className="panel-container"><h2><ShieldCheck aria-hidden="true" />Attack probe evidence</h2>
         {report.error && <p role="alert" className="error">{report.error} Earlier evidence may be stale.</p>}
-        {!latest ? <p>No probe run yet. Execute the runner to measure the eight route checks.</p> : <>
+        {!latest ? <p>No probe run yet. Execute the runner to measure the ten route checks.</p> : <>
           <p className="report-counts">Reported: {latest.probes.length} · PASS: {latest.probes.filter(probe => probe.status === 'PASS').length} · FAIL: {latest.probes.filter(probe => probe.status === 'FAIL').length} · SKIPPED: {latest.probes.filter(probe => probe.status === 'SKIPPED').length}</p>
           <p className="hint">Run {latest.runId} · {latest.timestamp}</p><p className="hint">Scope: software-authenticator fixtures against the production HTTP routers. Physical hardware and the browser-origin test are demonstrated separately.</p>
-          {latest.probes.length !== 8 && <p className="error">This report does not contain all eight expected probes.</p>}
+          {latest.probes.length === 1 && <p className="hint">Single-probe run from the demo controls. Execute the runner for the full suite.</p>}
           <ul className="probe-list compact-probes">{latest.probes.map(probe => <li key={probe.id}><span className={`badge ${probe.status.toLowerCase()}`}>{probe.status}</span><strong>{probe.name}</strong><details><summary>Measured result</summary><p>{probe.detail}</p></details></li>)}</ul>
         </>}
       </section>

@@ -44,7 +44,7 @@ export function PhishingLabPage() {
       setBrowserResult('RP isolation was not confirmed. Check that the attacker domain is distinct.');
     } catch (err) {
       if (err instanceof Error && err.name === 'SecurityError') {
-        setBrowserResult(`✓ FIDO2 Browser Hardware Isolation Active: Browser blocked RP ID '${config.data.rpId}' on untrusted origin '${window.location.hostname}' (SecurityError). No passkey private key or signature was released.`);
+        setBrowserResult(`Browser RP isolation observed: browser blocked RP ID '${config.data.rpId}' on '${window.location.hostname}' (SecurityError). This does not establish hardware-backed key storage.`);
       } else {
         setBrowserResult('The biometric prompt was cancelled or timed out.');
       }
@@ -54,14 +54,15 @@ export function PhishingLabPage() {
   return <section>
     <p className="eyebrow"><ShieldX aria-hidden="true" />Controlled Attacker Domain</p>
     <h1>Phishing & Session-Replay Lab</h1>
-    <p>Current origin: <code>{window.location.origin}</code> (Simulated punycode phishing clone of <code>bank.local:3000</code>)</p>
+    <p>Current attacker origin: <code>{window.location.origin}</code>. This is a separate-host look-alike lab, not a punycode domain or an intercepted banking site.</p>
+    <p className="banner">Authorized local lab only. Use invented demo credentials, never a real username/password. The bank itself does not accept passwords.</p>
     {config.data && <a className="button-link secondary" href={`${config.data.bankOrigin}/demo`} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />Open genuine bank and demo controls</a>}
     
     <div className="comparison-grid panel">
       {/* Legacy Password Form Interception */}
       <section className="comparison-card legacy-card">
         <h2><ShieldX aria-hidden="true" />Legacy Password Phishing (Vulnerable)</h2>
-        <p>Passwords transmit a shared secret. Entering credentials on this attacker site exposes them in plaintext.</p>
+        <p>Entering a password on an attacker-controlled site reveals it to that server. HTTPS encrypts transport; it does not make the recipient trustworthy.</p>
         <label htmlFor="phish-user">Target username</label>
         <input id="phish-user" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username" />
         <label htmlFor="phish-password">Password to harvest</label>
@@ -71,7 +72,7 @@ export function PhishingLabPage() {
           setCapture(''); 
           const result = await labRequest('harvest', { username, password }); 
           if (result.status !== 200 || !result.data.success) throw new Error('Capture failed'); 
-          setCapture(`HTTP 200: Attacker harvested credentials for '${result.data.username}' with password '${result.data.password}'. Transmitted in plaintext over HTTP!`); 
+          setCapture(`HTTP 200: Attacker harvested credentials for '${result.data.username}' with password '${result.data.password}'. The attacker server can read the submitted password even when HTTPS encrypts transport.`);
         })}>
           {busy === 'capture' ? 'Submitting…' : 'Submit password to attacker site'}
         </button>
@@ -80,8 +81,8 @@ export function PhishingLabPage() {
 
       {/* Passkey Boundaries: Layer 1 & Layer 2 */}
       <section className="comparison-card trustx-card">
-        <h2><ShieldCheck aria-hidden="true" />FIDO2 Hardware Passkeys (Immune)</h2>
-        <p>Passkeys are bound to origin domains. Even on this phishing site, credentials cannot be stolen or relayed.</p>
+        <h2><ShieldCheck aria-hidden="true" />Passkey origin checks</h2>
+        <p>Test browser RP isolation, then the server verifier separately. Neither check proves immunity to same-origin scripts or a compromised device.</p>
         
         <button disabled={!!busy || !config.data} onClick={() => void run('browser', browserProbe)}>
           <KeyRound aria-hidden="true" />Test 1: Browser RP ID Isolation
@@ -92,9 +93,9 @@ export function PhishingLabPage() {
           setServerResult(''); 
           const result = await labRequest('origin-probe', {}); 
           if (result.status !== 401 || result.data.code !== 'ORIGIN_MISMATCH') throw new Error('Origin check inconclusive'); 
-          setServerResult(`✓ FIDO2 Server Origin Verification Active: HTTP 401 ORIGIN_MISMATCH. Backend SimpleWebAuthn verified clientDataJSON.origin and rejected the relayed assertion (Expected: ${result.data.expectedOrigin}, Received: ${result.data.actualOrigin}).`); 
+          setServerResult(`HTTP 401 ORIGIN_MISMATCH. Actual SimpleWebAuthn rejected the crafted assertion's origin (Expected: ${result.data.expectedOrigin}, Received: ${result.data.actualOrigin}). This probe is not a valid browser-signed assertion or a reverse-proxy interception.`);
         })}>
-          Test 2: Server-Side Reverse Proxy Origin Verifier
+          Test 2: Server Origin Verification
         </button>
         {serverResult && <p role="status" className="banner" style={{ textAlign: 'left' }}>{serverResult}</p>}
       </section>

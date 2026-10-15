@@ -11,10 +11,42 @@ import {
 } from '@simplewebauthn/server';
 import { db } from '../db/index';
 import { rpName } from '../webauthn/config';
-import { getEffectiveRpID, getEffectiveOrigin } from './auth.routes';
+import { getEffectiveRpID, getEffectiveOrigin, generateRecoveryCodes } from './auth.routes';
 import type { User, RecoveryCode, PendingRecovery } from '../db/schema';
+import { serializeDevicePublicKey } from '../middleware/dpop.middleware';
+import { requireSession } from '../middleware/session.middleware';
+import { requireStepUpAuthorization, consumeStepUpAuthorization } from '../middleware/stepup.middleware';
 
 const router = Router();
+const rotations = new Set<string>();
+
+router.get('/status', requireSession, (req,res) => {
+  const remainingCodes = (db.prepare('SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id = ? AND used = 0').get(req.user!.id) as {n:number}).n;
+  const activePasskeys = (db.prepare("SELECT COUNT(*) AS n FROM credentials WHERE user_id = ? AND status = 'ACTIVE'").get(req.user!.id) as {n:number}).n;
+  return res.json({ remainingCodes, activePasskeys });
+});
+
+router.post('/rotate-codes', requireSession, requireStepUpAuthorization({alwaysEnforce:true}), async (req,res) => {
+  if (req.session!.is_kiosk) return res.status(403).json({error:'KIOSK_RECOVERY_ROTATION_FORBIDDEN'});
+  if (rotations.has(req.user!.id)) return res.status(409).json({error:'RECOVERY_ROTATION_IN_PROGRESS'});
+  rotations.add(req.user!.id);
+  try {
+    const codes = generateRecoveryCodes(), hashes: string[] = [];
+    for (const code of codes) hashes.push(await argon2.hash(code,{type:argon2.argon2id}));
+    db.transaction(() => {
+      if (!db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ? AND expires_at > ?').get(req.session!.id,req.user!.id,Date.now())) throw new Error('Session ended');
+      consumeStepUpAuthorization(req);
+      const timestamp = new Date().toISOString();
+      db.prepare('UPDATE recovery_codes SET used = 1, consumed_at = ? WHERE user_id = ? AND used = 0').run(timestamp,req.user!.id);
+      // Invalidate staged tickets too; they refer to the replaced codes.
+      db.prepare('UPDATE pending_recoveries SET used = 1 WHERE user_id = ? AND used = 0').run(req.user!.id);
+      for (let i=0;i<codes.length;i++) db.prepare('INSERT INTO recovery_codes(id,user_id,code_hash,used,created_at) VALUES (?,?,?,0,?)').run(crypto.randomUUID(),req.user!.id,hashes[i],timestamp);
+      db.prepare('INSERT INTO audit_events(id,type,user_id,detail,timestamp) VALUES (?,?,?,?,?)').run(crypto.randomUUID(),'RECOVERY_CODES_ROTATED',req.user!.id,JSON.stringify({count:codes.length}),timestamp);
+    }).immediate();
+    return res.json({success:true,recoveryCodes:codes});
+  } catch { return res.status(409).json({error:'RECOVERY_ROTATION_NOT_COMMITTED'}); }
+  finally { rotations.delete(req.user!.id); }
+});
 
 // In-memory rate limiting for recovery attempts: key -> { count, lockedUntil }
 const recoveryRateLimits = new Map<string, { count: number; lockedUntil: number }>();
@@ -133,6 +165,7 @@ router.post('/verify-code', async (req: Request, res: Response) => {
       userName: cleanUsername,
       userDisplayName: cleanUsername,
       attestationType: 'none',
+      authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' },
       timeout: 60000,
     });
 
@@ -178,6 +211,8 @@ router.post('/verify-code', async (req: Request, res: Response) => {
 router.post('/complete', async (req: Request, res: Response) => {
   try {
     const { username, recoveryTicket, attestationResponse, deviceName, dpopPublicKey } = req.body;
+    let dpopKeyStr: string;
+    try { dpopKeyStr = serializeDevicePublicKey(dpopPublicKey); } catch { return res.status(400).json({ error: 'VALID_PUBLIC_DEVICE_KEY_REQUIRED' }); }
     if (!username || !recoveryTicket || !attestationResponse) {
       return res.status(400).json({ error: 'Missing username, recoveryTicket, or attestationResponse' });
     }
@@ -206,7 +241,7 @@ router.post('/complete', async (req: Request, res: Response) => {
       expectedChallenge: pending.replacement_registration_challenge,
       expectedOrigin: effectiveOrigin,
       expectedRPID: effectiveRpID,
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified || !verification.registrationInfo) {
@@ -227,8 +262,8 @@ router.post('/complete', async (req: Request, res: Response) => {
       const ticketUpdate = db.prepare(`
         UPDATE pending_recoveries
         SET used = 1
-        WHERE ticket_id = ? AND used = 0
-      `).run(pending.ticket_id);
+        WHERE ticket_id = ? AND used = 0 AND expires_at > ?
+      `).run(pending.ticket_id, Math.floor(Date.now() / 1000));
 
       if (ticketUpdate.changes !== 1) {
         throw new Error('CONCURRENCY_ABORT: Recovery ticket was already consumed by a concurrent request');
@@ -274,12 +309,6 @@ router.post('/complete', async (req: Request, res: Response) => {
       `).run(user.id);
 
       // 6. Issue fresh session for the newly enrolled replacement authenticator
-      const dpopKeyStr = dpopPublicKey
-        ? typeof dpopPublicKey === 'string'
-          ? dpopPublicKey
-          : JSON.stringify(dpopPublicKey)
-        : null;
-
       db.prepare(`
         INSERT INTO sessions (id, user_id, credential_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at, dpop_public_key)
         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)

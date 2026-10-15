@@ -10,7 +10,7 @@ import {
 } from '@simplewebauthn/server';
 import { db } from '../db/index';
 import { requireSession } from '../middleware/session.middleware';
-import { requireStepUpAuthorization } from '../middleware/stepup.middleware';
+import { requireStepUpAuthorization, consumeStepUpAuthorization } from '../middleware/stepup.middleware';
 import { rpName } from '../webauthn/config';
 import { getEffectiveRpID, getEffectiveOrigin } from './auth.routes';
 import type { Credential } from '../db/schema';
@@ -46,9 +46,10 @@ router.get('/list', requireSession, (req: Request, res: Response) => {
  * POST /api/devices/register-challenge (Secondary Device Enrollment)
  * Initiates registration ceremony to enroll an additional authenticator for the active user.
  */
-router.post('/register-challenge', requireSession, async (req: Request, res: Response) => {
+router.post('/register-challenge', requireSession, requireStepUpAuthorization({ alwaysEnforce: true }), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
+    if (req.session!.is_kiosk) return res.status(403).json({ error: 'KIOSK_ENROLLMENT_FORBIDDEN' });
     const userBuffer = Buffer.from(user.id);
 
     // Retrieve existing credentials to prevent enrolling duplicate keys
@@ -71,11 +72,14 @@ router.post('/register-challenge', requireSession, async (req: Request, res: Res
       userName: user.username,
       userDisplayName: user.username,
       attestationType: 'none',
+      preferredAuthenticatorType: req.body.authenticator === 'security-key' ? 'securityKey' : undefined,
+      authenticatorSelection: { residentKey: 'preferred', userVerification: 'required', authenticatorAttachment: req.body.authenticator === 'security-key' ? 'cross-platform' : undefined },
       excludeCredentials,
       timeout: 60000,
     });
 
-    deviceChallenges.set(user.id, {
+    consumeStepUpAuthorization(req);
+    deviceChallenges.set(req.session!.id, {
       challenge: options.challenge,
       expiresAt: Date.now() + 60000,
     });
@@ -94,18 +98,19 @@ router.post('/register-challenge', requireSession, async (req: Request, res: Res
 router.post('/register-verify', requireSession, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
+    if (req.session!.is_kiosk) return res.status(403).json({ error: 'KIOSK_ENROLLMENT_FORBIDDEN' });
     const { attestationResponse, deviceName } = req.body;
 
     if (!attestationResponse) {
       return res.status(400).json({ error: 'Missing attestationResponse' });
     }
 
-    const stored = deviceChallenges.get(user.id);
+    const stored = deviceChallenges.get(req.session!.id);
     if (!stored || stored.expiresAt < Date.now()) {
       return res.status(400).json({ error: 'Device registration challenge expired or not found' });
     }
 
-    deviceChallenges.delete(user.id);
+    deviceChallenges.delete(req.session!.id);
 
     const effectiveOrigin = getEffectiveOrigin(req);
     const effectiveRpID = getEffectiveRpID(req);
@@ -115,7 +120,7 @@ router.post('/register-verify', requireSession, async (req: Request, res: Respon
       expectedChallenge: stored.challenge,
       expectedOrigin: effectiveOrigin,
       expectedRPID: effectiveRpID,
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified || !verification.registrationInfo) {
@@ -125,29 +130,33 @@ router.post('/register-verify', requireSession, async (req: Request, res: Respon
     const { credential } = verification.registrationInfo;
     const nowIso = new Date().toISOString();
 
-    db.prepare(`
-      INSERT INTO credentials (id, user_id, public_key, counter, transports, device_name, status, created_at, last_used_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `).run(
-      credential.id,
-      user.id,
-      Buffer.from(credential.publicKey),
-      credential.counter,
-      credential.transports ? JSON.stringify(credential.transports) : null,
-      deviceName || 'Secondary Authenticator',
-      nowIso,
-      nowIso
-    );
+    db.transaction(() => {
+      if (stored.expiresAt <= Date.now() || !db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ? AND expires_at > ?').get(req.session!.id, user.id, Date.now())) throw new Error('Enrollment session ended or expired');
+      db.prepare(`
+        INSERT INTO credentials (id, user_id, public_key, counter, transports, device_name, status, created_at, last_used_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+      `).run(
+        credential.id,
+        user.id,
+        Buffer.from(credential.publicKey),
+        credential.counter,
+        credential.transports ? JSON.stringify(credential.transports) : null,
+        deviceName || 'Secondary Authenticator',
+        nowIso,
+        nowIso
+      );
 
-    db.prepare(`
-      INSERT INTO audit_events (id, type, user_id, detail, timestamp)
-      VALUES (?, 'SECONDARY_DEVICE_ENROLLED', ?, ?, ?)
-    `).run(
-      `aud_${crypto.randomBytes(8).toString('hex')}`,
-      user.id,
-      JSON.stringify({ deviceId: credential.id, deviceName }),
-      nowIso
-    );
+      db.prepare(`
+        INSERT INTO audit_events (id, type, user_id, detail, timestamp)
+        VALUES (?, 'SECONDARY_DEVICE_ENROLLED', ?, ?, ?)
+      `).run(
+        `aud_${crypto.randomBytes(8).toString('hex')}`,
+        user.id,
+        JSON.stringify({ deviceId: credential.id, deviceName }),
+        nowIso
+      );
+
+    }).immediate();
 
     return res.json({
       success: true,
@@ -200,6 +209,7 @@ router.post('/revoke', requireSession, requireStepUpAuthorization({ alwaysEnforc
 
     // Atomic transaction: mark REVOKED and purge all sessions associated with this credential
     const revokeTransaction = db.transaction(() => {
+      consumeStepUpAuthorization(req);
       db.prepare(`
         UPDATE credentials
         SET status = 'REVOKED'

@@ -17,6 +17,8 @@ import { rpName, rpID, origin } from '../webauthn/config';
 import { RiskService } from '../services/risk.service';
 import type { User, Credential, Session } from '../db/schema';
 import { requireSession } from '../middleware/session.middleware';
+import { serializeDevicePublicKey } from '../middleware/dpop.middleware';
+import { assessLoginContext, type LoginRisk } from '../services/login-risk.service';
 
 const router = Router();
 
@@ -28,6 +30,7 @@ interface ChallengeRecord {
   expiresAt: number;
   intentId?: string;
   action?: { httpMethod: string; route: string; intentHash: string };
+  loginCheck?: { credentialId: string; deviceKey: string; ip: string; userAgent: string; risk: LoginRisk };
 }
 const challengeStore = new Map<string, ChallengeRecord>();
 
@@ -41,7 +44,7 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref();
 
-function generateRecoveryCodes(count: number = 8): string[] {
+export function generateRecoveryCodes(count: number = 8): string[] {
   const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const codes: string[] = [];
   for (let i = 0; i < count; i++) {
@@ -66,10 +69,29 @@ export function getEffectiveRpID(req: Request): string {
 export function getEffectiveOrigin(req: Request): string {
   if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
     const protocol = req.secure ? 'https' : 'http';
-    const host = req.get('host') || `${req.hostname}:3000`;
-    return `${protocol}://${host}`;
+    // Do not let a forged Host port select the origin that the verifier trusts.
+    const port = req.socket.localPort;
+    const defaultPort = req.secure ? 443 : 80;
+    return `${protocol}://${req.hostname}${port && port !== defaultPort ? `:${port}` : ''}`;
   }
   return origin;
+}
+
+function completeLogin(req: Request, res: Response, credential: Credential, newCounter: number, deviceKey: string, risk: LoginRisk) {
+  const now = Date.now(), timestamp = new Date().toISOString();
+  const sessionId = `sess_${crypto.randomBytes(24).toString('hex')}`;
+  const expiresAt = now + 24 * 60 * 60 * 1000;
+  const ip = req.ip || '127.0.0.1', userAgent = req.headers['user-agent'] || 'unknown';
+  const user = db.transaction(() => {
+    const updated = db.prepare("UPDATE credentials SET counter = ?, last_used_at = ? WHERE id = ? AND user_id = ? AND status = 'ACTIVE' AND counter = ?").run(newCounter, timestamp, credential.id, credential.user_id, credential.counter);
+    if (updated.changes !== 1) throw new Error('AUTHENTICATOR_STATE_CHANGED');
+    db.prepare('INSERT INTO sessions (id,user_id,credential_id,created_at,expires_at,is_kiosk,ip_address,user_agent,last_active_at,dpop_public_key,login_risk) VALUES (?,?,?,?,?,0,?,?,?,?,?)').run(sessionId, credential.user_id, credential.id, timestamp, expiresAt, ip, userAgent, now, deviceKey, JSON.stringify(risk));
+    db.prepare('INSERT INTO known_login_contexts (user_id,credential_id,ip_address,user_agent,last_seen_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id,credential_id) DO UPDATE SET ip_address=excluded.ip_address,user_agent=excluded.user_agent,last_seen_at=excluded.last_seen_at').run(credential.user_id, credential.id, ip, userAgent, timestamp);
+    db.prepare('INSERT INTO audit_events (id,type,user_id,detail,timestamp) VALUES (?,?,?,?,?)').run(crypto.randomUUID(), 'AUTH_LOGIN_SUCCESS', credential.user_id, JSON.stringify({ credentialId: credential.id, ipAddress: ip, userAgent, risk }), timestamp);
+    return db.prepare('SELECT id,username,role FROM users WHERE id = ?').get(credential.user_id) as User;
+  }).immediate();
+  res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'strict', path: '/', maxAge: 24 * 60 * 60 * 1000 });
+  return res.json({ success: true, user: { id: user.id, username: user.username, role: user.role }, isKiosk: false, expiresAt, loginRisk: risk });
 }
 
 /**
@@ -79,7 +101,7 @@ export function getEffectiveOrigin(req: Request): string {
 router.post('/register-challenge', async (req: Request, res: Response) => {
   try {
     const { username } = req.body;
-    if (!username || typeof username !== 'string' || username.trim().length === 0) {
+    if (!username || typeof username !== 'string' || username.trim().length === 0 || username.trim().length > 100) {
       return res.status(400).json({ error: 'Valid username is required' });
     }
 
@@ -102,10 +124,12 @@ router.post('/register-challenge', async (req: Request, res: Response) => {
       userName: cleanUsername,
       userDisplayName: cleanUsername,
       attestationType: 'none',
+      preferredAuthenticatorType: req.body.authenticator === 'security-key' ? 'securityKey' : undefined,
       timeout: 60000,
       authenticatorSelection: {
+        authenticatorAttachment: req.body.authenticator === 'security-key' ? 'cross-platform' : undefined,
         residentKey: 'preferred',
-        userVerification: 'preferred',
+        userVerification: 'required',
       },
     });
 
@@ -151,7 +175,7 @@ router.post('/register-verify', async (req: Request, res: Response) => {
       expectedChallenge: stored.challenge,
       expectedOrigin: effectiveOrigin,
       expectedRPID: effectiveRpID,
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified || !verification.registrationInfo) {
@@ -229,7 +253,7 @@ router.post('/register-verify', async (req: Request, res: Response) => {
 router.post('/login-challenge', async (req: Request, res: Response) => {
   try {
     const { username } = req.body;
-    if (!username || typeof username !== 'string') {
+    if (!username || typeof username !== 'string' || !username.trim() || username.trim().length > 100) {
       return res.status(400).json({ error: 'Valid username is required' });
     }
 
@@ -259,7 +283,7 @@ router.post('/login-challenge', async (req: Request, res: Response) => {
       rpID: effectiveRpID,
       allowCredentials,
       timeout: 60000,
-      userVerification: 'preferred',
+      userVerification: 'required',
     });
 
     challengeStore.set(cleanUsername, {
@@ -284,6 +308,8 @@ router.post('/login-verify', async (req: Request, res: Response) => {
   let storedUserId: string | null = null;
   try {
     const { username, assertionResponse, dpopPublicKey } = req.body;
+    let dpopKeyStr: string;
+    try { dpopKeyStr = serializeDevicePublicKey(dpopPublicKey); } catch { return res.status(400).json({ error: 'VALID_PUBLIC_DEVICE_KEY_REQUIRED' }); }
     if (!username || !assertionResponse) {
       return res.status(400).json({ error: 'Missing username or assertionResponse' });
     }
@@ -323,7 +349,7 @@ router.post('/login-verify', async (req: Request, res: Response) => {
         counter: cred.counter,
         transports: cred.transports ? JSON.parse(cred.transports) : undefined,
       },
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified || !verification.authenticationInfo) {
@@ -348,62 +374,18 @@ router.post('/login-verify', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Authenticator counter anomaly detected' });
     }
 
-    // Update credential counter & last_used_at
-    db.prepare(`
-      UPDATE credentials
-      SET counter = ?, last_used_at = ?
-      WHERE id = ?
-    `).run(newCounter, nowIso, cred.id);
-
-    // Create session in sessions table (24-hour lifetime)
-    const sessionId = `sess_${crypto.randomBytes(24).toString('hex')}`;
-    const expiresAt = now + 24 * 60 * 60 * 1000;
-    const ipAddress = req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1';
-    const userAgent = req.headers['user-agent'] || 'unknown';
-
-    const dpopKeyStr = dpopPublicKey
-      ? typeof dpopPublicKey === 'string'
-        ? dpopPublicKey
-        : JSON.stringify(dpopPublicKey)
-      : null;
-
-    db.prepare(`
-      INSERT INTO sessions (id, user_id, credential_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at, dpop_public_key)
-      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
-    `).run(sessionId, stored.userId, cred.id, nowIso, expiresAt, ipAddress, userAgent, now, dpopKeyStr);
-
-    // Audit Log
-    db.prepare(`
-      INSERT INTO audit_events (id, type, user_id, detail, timestamp)
-      VALUES (?, 'AUTH_LOGIN_SUCCESS', ?, ?, ?)
-    `).run(
-      `aud_${crypto.randomBytes(8).toString('hex')}`,
-      stored.userId,
-      JSON.stringify({ credentialId: cred.id }),
-      nowIso
-    );
-
-    // Set HttpOnly, SameSite=Strict, Secure session cookie
-    res.cookie('session_id', sessionId, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      path: '/',
-      maxAge: 24 * 60 * 60 * 1000,
-    });
-
-    const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(stored.userId) as User;
-
-    return res.json({
-      success: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-      },
-      isKiosk: false,
-      expiresAt,
-    });
+    const ip = req.ip || '127.0.0.1', userAgent = req.headers['user-agent'] || 'unknown';
+    const risk = assessLoginContext(stored.userId, cred.id, ip, userAgent);
+    if (risk.extraCheckRequired) {
+      const options = await generateAuthenticationOptions({ rpID: effectiveRpID, allowCredentials: [{ id: cred.id, transports: cred.transports ? JSON.parse(cred.transports) : undefined }], userVerification: 'required', timeout: 60000 });
+      const updated = db.prepare("UPDATE credentials SET counter = ? WHERE id = ? AND status = 'ACTIVE' AND counter = ?").run(newCounter, cred.id, cred.counter);
+      if (updated.changes !== 1) throw new Error('AUTHENTICATOR_STATE_CHANGED');
+      const pendingId = crypto.randomUUID();
+      challengeStore.set(`logincheck_${pendingId}`, { challenge: options.challenge, userId: stored.userId, type: 'authentication', expiresAt: Date.now() + 60000, loginCheck: { credentialId: cred.id, deviceKey: dpopKeyStr, ip, userAgent, risk } });
+      db.prepare('INSERT INTO audit_events (id,type,user_id,detail,timestamp) VALUES (?,?,?,?,?)').run(crypto.randomUUID(), 'LOGIN_EXTRA_CHECK_REQUIRED', stored.userId, JSON.stringify({ ipAddress: ip, userAgent, risk }), new Date().toISOString());
+      return res.status(403).json({ error: 'LOGIN_EXTRA_CHECK_REQUIRED', pendingId, authenticationOptions: options, risk });
+    }
+    return completeLogin(req, res, cred, newCounter, dpopKeyStr, risk);
   } catch (err: any) {
     console.error('[WebAuthn] login-verify error:', err);
     const isOriginMismatch = err.message && (err.message.includes('origin') || err.message.includes('Origin'));
@@ -429,6 +411,27 @@ router.post('/login-verify', async (req: Request, res: Response) => {
  * POST /api/auth/step-up-challenge
  * Issues a biometric authentication challenge bound to a specific high-risk action intent
  */
+router.post('/login-extra-verify', async (req: Request, res: Response) => {
+  const { pendingId, assertionResponse } = req.body;
+  if (typeof pendingId !== 'string' || !assertionResponse) return res.status(400).json({ error: 'LOGIN_CHECK_REQUIRED' });
+  const key = `logincheck_${pendingId}`, stored = challengeStore.get(key);
+  function reject(status: number, reason: string) {
+    if (stored?.loginCheck) db.prepare('INSERT INTO audit_events(id,type,user_id,detail,timestamp) VALUES (?,?,?,?,?)').run(crypto.randomUUID(),'LOGIN_EXTRA_CHECK_REJECTED',stored.userId,JSON.stringify({reason,ipAddress:req.ip || '127.0.0.1',userAgent:req.headers['user-agent'] || 'unknown'}),new Date().toISOString());
+    return res.status(status).json({error:reason});
+  }
+  if (!stored?.loginCheck || stored.expiresAt <= Date.now()) { challengeStore.delete(key); return reject(401,'LOGIN_CHECK_EXPIRED'); }
+  challengeStore.delete(key);
+  const context = stored.loginCheck;
+  if ((req.ip || '127.0.0.1') !== context.ip || (req.headers['user-agent'] || 'unknown') !== context.userAgent) return reject(403,'LOGIN_CONTEXT_CHANGED');
+  const cred = db.prepare("SELECT * FROM credentials WHERE id = ? AND user_id = ? AND status = 'ACTIVE'").get(context.credentialId, stored.userId) as Credential | undefined;
+  if (!cred || assertionResponse.id !== cred.id) return reject(401,'INVALID_CREDENTIAL');
+  try {
+    const verification = await verifyAuthenticationResponse({ response: assertionResponse, expectedChallenge: stored.challenge, expectedOrigin: getEffectiveOrigin(req), expectedRPID: getEffectiveRpID(req), credential: { id: cred.id, publicKey: new Uint8Array(cred.public_key), counter: cred.counter, transports: cred.transports ? JSON.parse(cred.transports) : undefined }, requireUserVerification: true });
+    if (!verification.verified || stored.expiresAt <= Date.now()) return reject(401,'LOGIN_CHECK_NOT_VERIFIED');
+    return completeLogin(req, res, cred, verification.authenticationInfo.newCounter, context.deviceKey, { ...context.risk, extraCheckCompleted: true });
+  } catch { return reject(401,'LOGIN_CHECK_NOT_VERIFIED'); }
+});
+
 router.post('/step-up-challenge', requireSession, async (req: Request, res: Response) => {
   try {
     const sessionId = req.cookies?.session_id;
@@ -463,7 +466,7 @@ router.post('/step-up-challenge', requireSession, async (req: Request, res: Resp
         transports: c.transports ? JSON.parse(c.transports) : undefined,
       })),
       timeout: 60000,
-      userVerification: 'preferred',
+      userVerification: 'required',
     });
 
     const intentId = crypto.randomUUID();
@@ -529,7 +532,7 @@ router.post('/step-up-verify', requireSession, async (req: Request, res: Respons
         counter: cred.counter,
         transports: cred.transports ? JSON.parse(cred.transports) : undefined,
       },
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
 
     if (!verification.verified) {
@@ -598,6 +601,7 @@ router.get('/session', requireSession, (req: Request, res: Response) => {
     isKiosk: Boolean(session.is_kiosk),
     isDeviceBound: !!session.dpop_public_key,
     expiresAt: session.expires_at,
+    loginRisk: session.login_risk ? JSON.parse(session.login_risk) : null,
     risk: {
       score: risk.score,
       level: risk.level,

@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
+async function openLab(page:Page,name:string) {await page.locator('.lab-menu > summary').click();await page.getByRole('button',{name,exact:true}).click();}
 
 test('live bank, attacker window, SOC, agent authorization, kiosk and recovery work together', async ({ page, context, browser }, testInfo) => {
   const errors: string[] = [];
@@ -34,7 +35,7 @@ test('live bank, attacker window, SOC, agent authorization, kiosk and recovery w
   await page.getByRole('button', { name: 'Admin SOC', exact: true }).click();
   await expect(page.getByText('No probe run yet.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Execute live attack runner' }).click();
-  await expect(page.locator('.report-counts')).toContainText('PASS: 8', { timeout: 15000 });
+  await expect(page.locator('.report-counts')).toContainText('PASS: 10', { timeout: 15000 });
   await expect(page.locator('.report-counts')).toContainText('FAIL: 0');
   await page.getByRole('button', { name: 'Verify chain on server' }).click();
   await expect(page.getByText('Server verification: INTACT', { exact: false })).toBeVisible();
@@ -45,36 +46,63 @@ test('live bank, attacker window, SOC, agent authorization, kiosk and recovery w
   const attackerPage = await attacker.newPage();
   attackerPage.on('pageerror', error => errors.push(error.message));
   await attackerPage.goto('http://127.0.0.1:3003/phishing');
-  await expect(attackerPage.getByRole('heading', { name: 'Phishing and session-replay lab' })).toBeVisible();
-  await attackerPage.getByRole('button', { name: 'Submit dummy password' }).click();
-  await expect(attackerPage.getByRole('status').filter({ hasText: 'attacker received' })).toBeVisible();
-  await attackerPage.getByRole('button', { name: 'Test browser RP isolation' }).click();
+  await expect(attackerPage.getByRole('heading', { name: 'Phishing & Session-Replay Lab' })).toBeVisible();
+  await attackerPage.getByRole('button', { name: 'Submit password to attacker site' }).click();
+  await expect(attackerPage.getByRole('status').filter({ hasText: 'Attacker harvested' })).toBeVisible();
+  await expect(attackerPage.getByRole('status').filter({ hasText: 'Attacker harvested' })).toContainText('even when HTTPS encrypts transport');
+  await attackerPage.getByRole('button', { name: 'Test 1: Browser RP ID Isolation' }).click();
   await expect(attackerPage.getByRole('status').filter({ hasText: 'SecurityError' })).toBeVisible();
-  await attackerPage.getByRole('button', { name: 'Test server origin verifier' }).click();
+  await attackerPage.getByRole('button', { name: 'Test 2: Server Origin Verification' }).click();
   await expect(attackerPage.getByRole('status').filter({ hasText: 'HTTP 401 ORIGIN_MISMATCH' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Demo arena', exact: true }).click();
+  await openLab(page,'Demo arena');
   await expect(page.getByRole('link', { name: 'Open phishing lab' })).toBeVisible();
   await page.getByRole('button', { name: 'Run cookie replay comparison' }).click();
   await expect(page.getByText('HTTP 200: your signed request', { exact: false })).toBeVisible();
   await expect(page.getByText('HTTP 401: DPOP_PROOF_REQUIRED', { exact: false })).toBeVisible();
+  for (const label of ['Revoked-session access', 'Step-up replay', 'Unauthorized device enrollment', 'Expired-session access']) {
+    await page.getByRole('button', { name: label, exact: true }).click();
+    await expect(page.getByRole('heading', { name: /EXPECTED DEFENSE OBSERVED/ })).toBeVisible();
+    await expect(page.getByRole('table', { name: /Actual HTTP observations/ })).toBeVisible();
+  }
   await expect(attackerPage.locator('.audit-feed')).toContainText('COOKIE REPLAY DEMONSTRATION', { timeout: 10000 });
   await attackerPage.screenshot({ path: testInfo.outputPath('live-attacker.png'), fullPage: true });
   await page.screenshot({ path: testInfo.outputPath('live-demo-arena.png'), fullPage: true });
 
-  await page.getByRole('button', { name: 'AgentShield', exact: true }).click();
-  await page.getByRole('button', { name: 'Authorize scope with a passkey' }).click();
+  await openLab(page,'AgentShield');
+  await page.getByRole('button', { name: 'Review exact intent' }).click();
+  await expect(page.getByRole('dialog')).toContainText('INR 5000');
+  await page.getByRole('button', { name: 'Confirm with a passkey' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Server verified the passkey' })).toBeVisible();
   await page.getByRole('button', { name: 'Submit to vulnerable sandbox' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'sandbox accepted' })).toBeVisible();
   await page.getByRole('button', { name: 'Submit to protected gateway' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'HTTP 403' })).toBeVisible();
   await page.getByLabel('Requested recipient').fill('Electricity Board');
-  await page.getByLabel('Requested amount (INR)').fill('250');
+  await page.getByLabel('Requested amount (INR)').fill('5000');
   await page.getByRole('button', { name: 'Submit to protected gateway' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'HTTP 200: permitted INR 250' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'HTTP 200: permitted INR 5000' })).toBeVisible();
+  await expect(page.locator('.ledger-balance')).toContainText('1,20,000');
+  await page.getByRole('button', { name: 'Submit to protected gateway' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'TOKEN_REPLAY' })).toBeVisible();
+  await expect(page.getByRole('table')).toContainText('5000');
+  await page.screenshot({ path: testInfo.outputPath('live-intentlock.png'), fullPage: true });
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({path:testInfo.outputPath('mobile-intentlock.png'),fullPage:true});
+  await page.setViewportSize({width:1280,height:800});
+  await page.getByRole('button',{name:'My account',exact:true}).first().click();
+  await page.getByRole('button',{name:'Sandbox payments',exact:true}).click();
+  await page.getByText('Quick examples for evaluation',{exact:true}).click();
+  await page.getByRole('button',{name:/Pay Electricity Bill/}).click();
+  await expect(page.getByRole('status').filter({hasText:'Sandbox INR 450 recorded'})).toBeVisible();
+  await page.getByRole('button',{name:/Transfer ₹50,000/}).click();
+  await expect(page.getByRole('status').filter({hasText:'Passkey step-up verified'})).toBeVisible();
+  await page.reload();
+  await page.getByRole('button',{name:'Sandbox payments',exact:true}).click();
+  await expect(page.locator('.ledger-balance')).toContainText('INR 69,550');
 
-  await page.getByRole('button', { name: 'Crypto Lab', exact: true }).click();
+  await openLab(page,'Crypto Lab');
   await page.getByRole('button', { name: 'Run live benchmark' }).click();
   await expect(page.getByRole('table')).toContainText('ML-DSA-44');
   await page.getByRole('button', { name: 'Verify my enrolled passkey' }).click();
@@ -101,8 +129,7 @@ test('live bank, attacker window, SOC, agent authorization, kiosk and recovery w
   await terminal.close();
 
   await page.goto('/account');
-  await cdp.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId: authenticator.authenticatorId });
-  await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+  await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'usb', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await page.getByRole('button', { name: 'Add a passkey' }).click();
   await page.getByLabel('Device name').fill('Backup authenticator');
   await page.getByRole('button', { name: 'Enroll passkey', exact: true }).click();
@@ -130,6 +157,7 @@ test('live bank, attacker window, SOC, agent authorization, kiosk and recovery w
   await replacementPage.getByRole('button', { name: 'Sign in with your replacement passkey' }).click();
   await replacementPage.getByLabel('Username', { exact: true }).fill(username);
   await replacementPage.getByRole('button', { name: 'Sign in with a passkey' }).click();
+  await replacementPage.getByRole('button',{name:'Verify this sign-in with my passkey'}).click();
   await expect(replacementPage.getByRole('heading', { name: `Hello, ${username}` })).toBeVisible();
   await replacementPage.getByRole('button', { name: 'Admin SOC', exact: true }).click();
   await replacementPage.getByRole('button', { name: 'Active sessions', exact: true }).click();

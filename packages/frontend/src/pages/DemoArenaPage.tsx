@@ -14,6 +14,12 @@ export function DemoArenaPage({ session, onSignIn }: { session: Session | null; 
   const [baseline, setBaseline] = useState('');
   const [legacy, setLegacy] = useState('');
   const [protectedResult, setProtectedResult] = useState('');
+  const [probe, setProbe] = useState<{ runId: string; timestamp: string; probes: { id: string; name: string; status: string; detail: string; observations: { path: string; httpStatus: number; reason: string; timestamp: string }[] }[] } | null>(null);
+  async function runProbe(probeId: string) {
+    setBusy(true); setError(''); setProbe(null);
+    try { setProbe(await request('/admin/attacks/run', { probeId })); }
+    catch (err) { setError(friendlyError(err)); } finally { setBusy(false); }
+  }
   useEffect(() => {
     let active = true; setLabReady(false);
     if (config.data) void fetch(`${config.data.attackerOrigin}/api/phish/health`, { signal: AbortSignal.timeout(5000) }).then(response => { if (active) setLabReady(response.ok); }).catch(() => { if (active) setLabReady(false); });
@@ -27,9 +33,9 @@ export function DemoArenaPage({ session, onSignIn }: { session: Session | null; 
       const response = await fetch(`${config.data.attackerOrigin}/api/phish/legacy-session-replay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: 'DEMO-LEGACY-SESSION' }), signal: AbortSignal.timeout(5000) });
       const result = await response.json();
       if (response.status !== 200 || result.status !== 'ACCEPTED') throw new Error('Legacy comparison unavailable');
-      setLegacy('HTTP 200: Bearer-only endpoint accepted token without DPoP device proof. Attacker hijacked standard session.');
+      setLegacy('HTTP 200: intentionally vulnerable sandbox accepted a published dummy bearer token. This is not a stolen real session.');
       const replay = await request<{ status: number; code: string }>('/demo/cookie-replay', {});
-      setProtectedResult(`HTTP ${replay.status}: ${replay.code}. ${replay.status === 401 && replay.code === 'DPOP_PROOF_REQUIRED' ? 'Stolen bank cookie was cryptographically rejected: RFC 9449 DPoP device proof required.' : 'Expected cookie-only rejection was NOT confirmed.'}`);
+      setProtectedResult(`HTTP ${replay.status}: ${replay.code}. ${replay.status === 401 && replay.code === 'DPOP_PROOF_REQUIRED' ? 'Real bank cookie replay rejected: browser-key proof required.' : 'Expected cookie-only rejection was NOT confirmed.'}`);
     } catch (err) { setError(friendlyError(err)); }
     finally { setBusy(false); }
   }
@@ -51,6 +57,12 @@ export function DemoArenaPage({ session, onSignIn }: { session: Session | null; 
       {baseline && <p role="status">{baseline}</p>}
       <div className="comparison-grid"><section className="comparison-card legacy-card"><h3>Vulnerable sandbox</h3><p>{legacy || 'Not tested yet. Uses a published dummy token only.'}</p></section><section className="comparison-card trustx-card"><h3>Protected bank session</h3><p>{protectedResult || 'Not tested yet. The server forwards only your own cookie without its device proof. The cookie value is never exposed in the page.'}</p></section></div>
       {error && <p role="alert" className="error">{error}</p>}
+    </section>
+    <section className="panel"><h2>Reproducible attack controls</h2><p>Each run creates isolated software-authenticator fixtures, submits real HTTP requests to the production routers, persists the evidence in SOC, and removes active fixture credentials and sessions. Your account is not revoked or enrolled by these probes.</p>
+      {session?.user.role !== 'ADMIN' && <p className="hint">Administrator sign-in is required for fixture-based attack controls. Cookie replay above remains available to signed-in users.</p>}
+      <div className="actions">{[['7','Session-cookie replay'],['5','Revoked-session access'],['8','Step-up replay'],['9','Unauthorized device enrollment'],['10','Expired-session access']].map(([id,label]) => <button key={id} className="secondary" disabled={busy || mockMode || session?.user.role !== 'ADMIN'} onClick={() => void runProbe(id)}>{label}</button>)}</div>
+      {busy && <p role="status">Executing real requests…</p>}
+      {probe && <div role="status"><p>Run {probe.runId} · {probe.timestamp}</p>{probe.probes.map(p => <section key={p.id}><h3>{p.name}: {p.status === 'PASS' ? 'EXPECTED DEFENSE OBSERVED' : 'ERROR / UNEXPECTED RESULT'}</h3><p>{p.detail}</p><div className="table-wrap"><table><caption>Actual HTTP observations · test {p.id}</caption><thead><tr><th>Endpoint</th><th>HTTP</th><th>Decision / reason</th><th>Timestamp</th></tr></thead><tbody>{p.observations.map((o,i) => <tr key={i}><td>{o.path}</td><td>{o.httpStatus}</td><td>{o.reason}</td><td>{o.timestamp}</td></tr>)}</tbody></table></div></section>)}</div>}
     </section>
   </section>;
 }

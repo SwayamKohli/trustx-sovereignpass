@@ -41,6 +41,7 @@ export async function mockRequest<T>(path: string, body?: unknown): Promise<T> {
       result = { success: true, ...startSession(account.user) }; break;
     }
     case '/auth/session': signedIn(); result = session; break;
+    case '/recovery/status': { const account=signedIn(); result={remainingCodes:account.codes.size,activePasskeys:account.devices.filter(d=>d.status==='ACTIVE').length}; break; }
     case '/auth/logout': {
       const account = signedIn();
       for (let i = sessions.length - 1; i >= 0; i--) if (sessions[i].username === account.user.username) sessions.splice(i, 1);

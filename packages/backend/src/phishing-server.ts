@@ -1,4 +1,4 @@
-// Local attacker comparison service. Only published dummy fixtures are accepted.
+// Local authorized comparison service. Never submit real credentials to this lab.
 import express from 'express';
 import https from 'https';
 import http from 'http';
@@ -33,11 +33,12 @@ app.post('/api/phish/harvest', (req, res) => {
   });
   return res.json({ success: true, username, password, timestamp });
 });
-app.post('/api/phish/legacy-session-replay', (_req, res) => {
+app.post('/api/phish/legacy-session-replay', (req, res) => {
+  if (req.body.token !== 'DEMO-LEGACY-SESSION') return res.status(400).json({ error: 'PUBLISHED_DUMMY_TOKEN_REQUIRED' });
   const timestamp = log('LEGACY_SESSION_REPLAY_ACCEPTED', {
     notice: 'Vulnerable bearer-only endpoint accepted token without DPoP device proof.',
     attackerDomain: demoOrigins().attackerOrigin,
-    risk: 'CRITICAL - Session hijack successful via stolen cookie/bearer token.',
+    scope: 'Published dummy bearer accepted by intentionally insecure sandbox; not a real bank-session hijack.',
   });
   return res.json({ status: 'ACCEPTED', timestamp, notice: 'Vulnerable bearer token accepted. Attacker impersonation successful.' });
 });
@@ -65,7 +66,7 @@ app.post('/api/phish/origin-probe', async (_req, res) => {
       actualOrigin: config.attackerOrigin,
       expectedOrigin: config.bankOrigin,
       timestamp,
-      scope: 'Actual SimpleWebAuthn origin validation: relayed assertion from phishing origin was cryptographically rejected.',
+      scope: 'Actual SimpleWebAuthn origin validation of a crafted assertion; not a valid browser signature or reverse-proxy interception.',
     });
   }
 });

@@ -1,157 +1,37 @@
-import { useState, useEffect } from 'react';
-import { Activity, ShieldCheck, ShieldAlert, Cpu, Landmark, Send, Zap, RotateCcw } from 'lucide-react';
+import { useState } from 'react';
+import { Landmark, ShieldCheck } from 'lucide-react';
 import { friendlyError, listDevices, logout, mockMode, request } from '../services/api';
-import type { Session } from '../services/types';
-import { expiryMilliseconds } from '../services/types';
+import { expiryMilliseconds, type Session } from '../services/types';
 import { useNow, usePolling } from '../services/usePolling';
 import { DeviceTable } from '../components/DeviceTable';
 import { PasskeyModal } from '../components/PasskeyModal';
-import { t } from '../services/i18n';
+import { RecoveryReadiness } from '../components/RecoveryReadiness';
+import { t, tr } from '../services/i18n';
+const loadBalance = () => request<{balancePaise:number}>('/agent/state');
 
-export function DashboardPage({ session, onLogout }: { session: Session; onLogout: () => void }) {
-  const { user } = session;
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [balance, setBalance] = useState<number>(125000);
-  const [txBusy, setTxBusy] = useState(false);
-  const [txResult, setTxResult] = useState('');
-  const devices = usePolling(listDevices);
-  const now = useNow();
-  const strings = t();
-
-  async function signOut() {
-    setBusy(true); setError('');
-    try { await logout(); onLogout(); } catch (err) { setError(friendlyError(err)); } finally { setBusy(false); }
+export function DashboardPage({session,onLogout}:{session:Session;onLogout:()=>void}) {
+  const [tab,setTab] = useState<'devices'|'security'|'payments'>('devices');
+  const [busy,setBusy] = useState(false), [adding,setAdding] = useState(false), [error,setError] = useState('');
+  const [txBusy,setTxBusy] = useState(false), [txResult,setTxResult] = useState('');
+  const [recipient,setRecipient] = useState('Electricity Board'), [amount,setAmount] = useState(450);
+  const devices = usePolling(listDevices), ledger = usePolling(loadBalance);
+  const now = useNow(), strings = t();
+  async function signOut() {setBusy(true);setError('');try{await logout();onLogout();}catch(err){setError(friendlyError(err));}finally{setBusy(false);}}
+  async function transfer(value:number,target:string) {
+    if(txBusy)return;setTxBusy(true);setError('');setTxResult('');
+    try{const result=await request<{success:boolean;message:string}>('/demo/transfer',{recipient:target,amount:value});if(!result.success)throw new Error('Not committed');setTxResult(result.message);ledger.refresh();}catch(err){setError(friendlyError(err));}finally{setTxBusy(false);}
   }
-
-  async function executeTransfer(amount: number, recipient: string) {
-    if (txBusy) return;
-    setTxBusy(true); setTxResult(''); setError('');
-    try {
-      const res = await request<{ success: boolean; txId: string; amount: number; recipient: string; stepUpUsed: boolean; message: string }>('/demo/transfer', { recipient, amount });
-      setBalance(prev => Math.max(0, prev - amount));
-      setTxResult(res.message);
-    } catch (err) {
-      setError(friendlyError(err));
-    } finally {
-      setTxBusy(false);
-    }
-  }
-
-  const riskScore = session.risk?.score ?? 10;
-  const riskLevel = session.risk?.level ?? 'LOW';
-  const riskReasons = session.risk?.reasons ?? ['Normal session baseline', 'Origin & device key matched'];
-
-  return (
-    <section>
-      <p className="eyebrow">{mockMode ? 'Preview account' : 'Signed in'}</p>
-      <h1>Hello, {user.username}</h1>
-      <p>{mockMode ? 'This is an in-memory UI preview, not an authenticated server session.' : 'Your passkey was verified by the server.'}</p>
-      <p>Account role: {user.role === 'ADMIN' ? 'Administrator' : 'Citizen'}</p>
-      
-      {session.isKiosk ? (
-        <p className="banner" role="status">Public terminal · {session.expiresAt ? `${Math.max(0, Math.ceil((expiryMilliseconds(session.expiresAt) - now) / 60_000))} minutes remaining` : 'Expiry unavailable'}. Sign out when finished.</p>
-      ) : !mockMode && (
-        <p className="hint">{session.isDeviceBound ? 'This session is bound to your browser’s device key (DPoP RFC 9449).' : 'This session has no confirmed device-key binding. Sign out and sign in from the live bank before demonstrating replay protection.'}</p>
-      )}
-
-      {/* Feature: Sovereign Banking Operations (Live Step-Up Demo) */}
-      <div className="panel-container" style={{ margin: '20px 0', padding: '20px', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '14px', background: '#041517' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Landmark aria-hidden="true" style={{ color: '#34d399', width: '20px', height: '20px' }} />
-            <div>
-              <h2 style={{ margin: 0, fontSize: '17px', color: '#f8fafc' }}>{strings.bankingTitle}</h2>
-              <span style={{ fontSize: '12px', color: '#94a3b8' }}>Account: SBIN-00921-SOVEREIGN · Digital Rupee (e₹)</span>
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase' }}>{strings.accountBalance}</span>
-            <div style={{ fontSize: '22px', fontWeight: 800, color: '#34d399', fontFamily: 'monospace' }}>
-              ₹{balance.toLocaleString('en-IN')}
-            </div>
-          </div>
-        </div>
-
-        <p style={{ fontSize: '13px', color: '#cbd5e1', margin: '0 0 14px 0' }}>
-          {strings.bankingSubtitle}
-        </p>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', marginBottom: '12px' }}>
-          <button
-            disabled={txBusy}
-            onClick={() => void executeTransfer(450, 'Tata Power / Electricity Board')}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', background: '#0f172a', border: '1px solid #334155' }}
-          >
-            <Zap aria-hidden="true" style={{ width: '16px', height: '16px', color: '#38bdf8' }} />
-            {txBusy ? 'Processing…' : strings.lowRiskBtn}
-          </button>
-
-          <button
-            disabled={txBusy}
-            onClick={() => void executeTransfer(50000, 'Ramesh Patel (State Bank of India)')}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: '1px solid #38bdf8' }}
-          >
-            <Send aria-hidden="true" style={{ width: '16px', height: '16px' }} />
-            {txBusy ? 'Awaiting Biometric Verification…' : strings.highRiskBtn}
-          </button>
-        </div>
-
-        {txResult && (
-          <p role="status" className="banner" style={{ textAlign: 'left', background: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#34d399', margin: '10px 0 0 0' }}>
-            ✓ {txResult}
-          </p>
-        )}
-      </div>
-
-      {/* Requirement 6: Contextual Risk Engine & Anomaly Detection Card */}
-      <div className="panel-container" style={{ margin: '20px 0', padding: '16px 20px', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '12px', background: '#090e17' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Activity aria-hidden="true" style={{ color: '#38bdf8' }} />
-            <h2 style={{ margin: 0, fontSize: '16px' }}>{strings.riskTitle}</h2>
-          </div>
-          <span className={`badge ${riskLevel === 'LOW' ? 'pass' : riskLevel === 'MEDIUM' ? 'skipped' : 'fail'}`} style={{ fontSize: '12px', padding: '4px 10px' }}>
-            Score: {riskScore} / 100 ({riskLevel === 'LOW' ? strings.riskLow : riskLevel === 'MEDIUM' ? strings.riskMedium : strings.riskHigh})
-          </span>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '12px' }}>
-          <div style={{ background: '#020617', padding: '10px 14px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-            <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase' }}>{strings.ipBaseline}</span>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', marginTop: '2px' }}>{session.risk?.ipAddress || '127.0.0.1'} · Matched</div>
-          </div>
-          <div style={{ background: '#020617', padding: '10px 14px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-            <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase' }}>{strings.deviceBinding}</span>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: session.isDeviceBound ? '#34d399' : '#f87171', marginTop: '2px' }}>
-              {session.isDeviceBound ? 'DPoP Key Bound (Active)' : 'Unbound'}
-            </div>
-          </div>
-          <div style={{ background: '#020617', padding: '10px 14px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-            <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase' }}>{strings.stepUpThreshold}</span>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', marginTop: '2px' }}>Score &ge; 70 &rarr; Biometric Passkey Re-auth</div>
-          </div>
-        </div>
-
-        <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-          <strong>{strings.evaluatedSignals}: </strong>
-          {riskReasons.join(' · ')}
-        </div>
-      </div>
-
-      <div className="section-heading">
-        <h2>{strings.devicesHeading}</h2>
-        <div className="actions">
-          <button className="secondary" onClick={devices.refresh}>{strings.refreshDevices}</button>
-          {!session.isKiosk && <button onClick={() => setAdding(true)}>{strings.addPasskey}</button>}
-        </div>
-      </div>
-      {devices.error && <p className="error" role="alert">{devices.error} Previously loaded devices may be stale.</p>}
-      {devices.data ? <DeviceTable devices={devices.data.devices} onChanged={devices.refresh} /> : <p>{devices.error ? 'Device inventory is unavailable.' : 'Loading your devices…'}</p>}
-      {error && <p role="alert" className="error">{error}</p>}
-      <button onClick={signOut} disabled={busy}>{busy ? 'Signing out…' : strings.signOut}</button>
-      {adding && <PasskeyModal onClose={() => setAdding(false)} onAdded={devices.refresh} />}
-    </section>
-  );
+  return <section><p className="eyebrow">{mockMode?tr('Preview account','पूर्वावलोकन खाता'):tr('Signed in','प्रवेश सफल')}</p><div className="section-heading"><div><h1>{tr('Hello,','नमस्ते,')} {session.user.username}</h1><p>{mockMode?tr('UI preview only, not a real authenticated session.','केवल पूर्वावलोकन, असली प्रमाणित सत्र नहीं।'):tr('Your passkey was verified by the server.','सर्वर ने आपकी पासकी की पुष्टि की।')}</p></div><button className="secondary" onClick={signOut} disabled={busy}>{busy?tr('Signing out…','साइन आउट हो रहा है…'):strings.signOut}</button></div>
+    {session.isKiosk && <p className="banner" role="status">{tr('Public terminal ·','सार्वजनिक टर्मिनल ·')} {session.expiresAt?`${Math.max(0,Math.ceil((expiryMilliseconds(session.expiresAt)-now)/60000))} ${tr('minutes remaining','मिनट बाकी')}`:tr('Expiry unavailable','समय सीमा उपलब्ध नहीं')}. {tr('Sign out when finished.','काम पूरा होने पर साइन आउट करें।')}</p>}
+    <nav aria-label="Account sections"><button aria-current={tab==='devices'?'page':undefined} onClick={()=>setTab('devices')}>{tr('Devices and access','डिवाइस और प्रवेश')}</button><button aria-current={tab==='security'?'page':undefined} onClick={()=>setTab('security')}>{tr('Security and recovery','सुरक्षा और रिकवरी')}</button><button aria-current={tab==='payments'?'page':undefined} onClick={()=>setTab('payments')}>{tr('Sandbox payments','सैंडबॉक्स भुगतान')}</button></nav>
+    {tab==='devices' && <><div className="section-heading"><h2>{strings.devicesHeading}</h2><div className="actions"><button className="secondary" onClick={devices.refresh}>{strings.refreshDevices}</button>{!session.isKiosk && <button onClick={()=>setAdding(true)}>{strings.addPasskey}</button>}</div></div>{devices.error && <p role="alert" className="error">{devices.error}</p>}{devices.data?<DeviceTable devices={devices.data.devices} onChanged={devices.refresh}/>:<p>{tr('Loading your devices…','डिवाइस खुल रहे हैं…')}</p>}<p className="hint">{tr('Add a backup before losing your only passkey. To use a basic phone without a smartphone, enroll a compatible FIDO2 security key on a supported computer. A storage USB drive is not an authenticator.','अपनी एकमात्र पासकी खोने से पहले बैकअप जोड़ें। स्मार्टफोन के बिना सही FIDO2 सुरक्षा कुंजी और समर्थित कंप्यूटर इस्तेमाल करें। पेन ड्राइव प्रमाणक नहीं है।')}</p></>}
+    {tab==='security' && <><h2><ShieldCheck aria-hidden="true" />{tr('Your current session','आपका वर्तमान सत्र')}</h2><p>{tr('Account role:','खाते की भूमिका:')} {session.user.role}</p><p>{session.isDeviceBound?tr('Protected requests require proof from this browser’s key. Cookie-only replay is rejected.','सुरक्षित अनुरोधों के लिए इसी ब्राउज़र की कुंजी का प्रमाण चाहिए। केवल कुकी से प्रवेश नहीं मिलता।'):tr('Browser-key binding was not confirmed. Sign in through the live bank before demonstrating protection.','ब्राउज़र कुंजी की पुष्टि नहीं हुई। सुरक्षा दिखाने से पहले लाइव बैंक से प्रवेश करें।')}</p>
+      {session.loginRisk && <p>{tr('Sign-in assessment:','प्रवेश मूल्यांकन:')} {session.loginRisk.level} · {session.loginRisk.score}/100. {session.loginRisk.extraCheckCompleted?tr('A changed context required and completed a fresh passkey check.','बदले हुए संदर्भ पर नई पासकी पुष्टि पूरी हुई।'):tr('No extra context check was required for this sign-in.','इस प्रवेश पर अतिरिक्त पुष्टि जरूरी नहीं थी।')}</p>}
+      {session.risk && <details><summary>{tr('Current request risk details','वर्तमान अनुरोध का जोखिम')}</summary><p>{session.risk.level} · {session.risk.score}/100</p><p>{session.risk.ipAddress}</p><ul>{session.risk.reasons.map(r=><li key={r}>{r}</li>)}</ul></details>}
+      <p className="hint">{tr('Risk uses observed network/browser changes, not GPS or IP geolocation. Fresh passkey checks are not a second independent factor. Browser-key proof does not guarantee hardware storage or protection from same-origin scripts.','जोखिम नेटवर्क/ब्राउज़र के बदलाव पर आधारित है, GPS या भौगोलिक स्थान पर नहीं। नई पासकी जाँच दूसरा स्वतंत्र साधन नहीं है। ब्राउज़र कुंजी हार्डवेयर संग्रह या उसी साइट की हानिकारक स्क्रिप्ट से सुरक्षा की गारंटी नहीं है।')}</p><RecoveryReadiness isKiosk={!!session.isKiosk}/></>}
+    {tab==='payments' && <><h2><Landmark aria-hidden="true" />{strings.bankingTitle}</h2><p>{strings.bankingSubtitle}</p><p className="ledger-balance">{tr('Synthetic account balance:','काल्पनिक खाते का शेष:')} {ledger.data?`INR ${(ledger.data.balancePaise/100).toLocaleString('en-IN')}`:tr('Unavailable','उपलब्ध नहीं')}</p>{ledger.error&&!mockMode&&<p role="alert" className="error">{ledger.error}</p>}
+      <form onSubmit={e=>{e.preventDefault();void transfer(amount,recipient);}}><div className="form-grid"><div><label htmlFor="bank-recipient">{tr('Sandbox recipient','सैंडबॉक्स प्राप्तकर्ता')}</label><input id="bank-recipient" value={recipient} maxLength={100} required onChange={e=>setRecipient(e.target.value)} disabled={txBusy}/></div><div><label htmlFor="bank-amount">{tr('Sandbox amount (INR)','सैंडबॉक्स राशि (INR)')}</label><input id="bank-amount" type="number" min="0.01" step="0.01" max="1000000000" required value={amount} onChange={e=>setAmount(Number(e.target.value))} disabled={txBusy}/></div></div><button disabled={txBusy||mockMode}>{tr('Record sandbox payment','सैंडबॉक्स भुगतान दर्ज करें')}</button></form>
+      <details className="panel"><summary>{tr('Quick examples for evaluation','मूल्यांकन के लिए छोटे उदाहरण')}</summary><div className="actions"><button className="secondary" disabled={txBusy||mockMode} onClick={()=>void transfer(450,'Tata Power / Electricity Board')}>{strings.lowRiskBtn}</button><button className="secondary" disabled={txBusy||mockMode} onClick={()=>void transfer(50000,'Ramesh Patel (State Bank of India)')}>{strings.highRiskBtn}</button></div></details>
+      <p className="hint">{tr('INR 10,000 or more requires fresh passkey approval. These are synthetic ledger entries, not bank transfers.','INR 10,000 या अधिक पर नई पासकी मंज़ूरी चाहिए। ये केवल काल्पनिक रिकॉर्ड हैं, असली बैंक भुगतान नहीं।')}</p>{txResult&&<p role="status" className="banner">{txResult}</p>}</>}
+    {error&&<p role="alert" className="error">{error}</p>}{adding&&<PasskeyModal onClose={()=>setAdding(false)} onAdded={devices.refresh}/>}</section>;
 }

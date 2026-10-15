@@ -4,7 +4,8 @@ import http from 'http';
 import crypto from 'crypto';
 import cookieParser from 'cookie-parser';
 import { requireSession } from '../middleware/session.middleware';
-import { requireStepUpAuthorization } from '../middleware/stepup.middleware';
+import { requireStepUpAuthorization, consumeStepUpAuthorization } from '../middleware/stepup.middleware';
+import { amountPaise } from '../services/agent.service';
 import deviceRoutes from './devices.routes';
 import { db } from '../db/index';
 
@@ -26,19 +27,26 @@ router.post('/cookie-replay', requireSession, async (req, res) => {
 });
 
 router.post('/transfer', requireSession, (req, res, next) => {
-  const amount = Number(req.body.amount || 0);
+  try { amountPaise(req.body.amount); } catch { return res.status(400).json({ error: 'INVALID_SANDBOX_AMOUNT' }); }
+  if (typeof req.body.recipient !== 'string' || !req.body.recipient.trim() || req.body.recipient.length > 100) return res.status(400).json({ error: 'INVALID_RECIPIENT' });
+  const amount = req.body.amount;
   if (amount >= 10000) {
     return requireStepUpAuthorization({ alwaysEnforce: true })(req, res, next);
   }
   return next();
 }, (req, res) => {
-  const amount = Number(req.body.amount || 0);
-  const recipient = String(req.body.recipient || 'Tata Power / Electricity Board').trim();
-  const txId = `TXN-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  const amount = req.body.amount;
+  const recipient = req.body.recipient.trim();
+  const txId = `TXN-${crypto.randomUUID()}`;
   const timestamp = new Date().toISOString();
   const stepUpUsed = amount >= 10000;
 
-  db.prepare('INSERT INTO audit_events (id, type, user_id, detail, timestamp) VALUES (?, ?, ?, ?, ?)').run(
+  try { db.transaction(() => {
+    const spent = (db.prepare('SELECT COALESCE(SUM(amount_paise),0) AS total FROM sandbox_payments WHERE user_id = ?').get(req.user!.id) as { total: number }).total;
+    if (spent + amountPaise(amount) > 12_500_000) throw new Error('SANDBOX_INSUFFICIENT_BALANCE');
+    consumeStepUpAuthorization(req);
+    db.prepare("INSERT INTO sandbox_payments (id,user_id,recipient,amount_paise,source,created_at) VALUES (?,?,?,?,'BANK',?)").run(txId, req.user!.id, recipient, amountPaise(amount), timestamp);
+    db.prepare('INSERT INTO audit_events (id, type, user_id, detail, timestamp) VALUES (?, ?, ?, ?, ?)').run(
     crypto.randomUUID(),
     'BANK_TRANSFER_COMPLETED',
     req.user!.id,
@@ -52,7 +60,8 @@ router.post('/transfer', requireSession, (req, res, next) => {
       timestamp,
     }),
     timestamp
-  );
+    );
+  }).immediate(); } catch { return res.status(409).json({ error: 'SANDBOX_TRANSFER_REJECTED' }); }
 
   return res.json({
     success: true,
@@ -62,8 +71,8 @@ router.post('/transfer', requireSession, (req, res, next) => {
     stepUpUsed,
     timestamp,
     message: stepUpUsed
-      ? `Biometric step-up re-authentication verified. ₹${amount.toLocaleString('en-IN')} transferred to ${recipient}.`
-      : `₹${amount.toLocaleString('en-IN')} transferred to ${recipient}. Low Risk evaluated; no step-up required.`,
+      ? `Passkey step-up verified. Sandbox INR ${amount.toLocaleString('en-IN')} recorded for ${recipient}. No real funds moved.`
+      : `Sandbox INR ${amount.toLocaleString('en-IN')} recorded for ${recipient}. No real funds moved.`,
   });
 });
 
