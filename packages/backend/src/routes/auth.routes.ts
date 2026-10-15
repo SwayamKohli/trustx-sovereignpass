@@ -14,7 +14,8 @@ import {
 } from '@simplewebauthn/server';
 import { db } from '../db/index';
 import { rpName, rpID, origin } from '../webauthn/config';
-import type { User, Credential } from '../db/schema';
+import { RiskService } from '../services/risk.service';
+import type { User, Credential, Session } from '../db/schema';
 
 const router = Router();
 
@@ -253,7 +254,7 @@ router.post('/login-challenge', async (req: Request, res: Response) => {
 router.post('/login-verify', async (req: Request, res: Response) => {
   let storedUserId: string | null = null;
   try {
-    const { username, assertionResponse } = req.body;
+    const { username, assertionResponse, dpopPublicKey } = req.body;
     if (!username || !assertionResponse) {
       return res.status(400).json({ error: 'Missing username or assertionResponse' });
     }
@@ -328,10 +329,16 @@ router.post('/login-verify', async (req: Request, res: Response) => {
     const ipAddress = req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
+    const dpopKeyStr = dpopPublicKey
+      ? typeof dpopPublicKey === 'string'
+        ? dpopPublicKey
+        : JSON.stringify(dpopPublicKey)
+      : null;
+
     db.prepare(`
-      INSERT INTO sessions (id, user_id, credential_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at)
-      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
-    `).run(sessionId, stored.userId, cred.id, nowIso, expiresAt, ipAddress, userAgent, now);
+      INSERT INTO sessions (id, user_id, credential_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at, dpop_public_key)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+    `).run(sessionId, stored.userId, cred.id, nowIso, expiresAt, ipAddress, userAgent, now, dpopKeyStr);
 
     // Audit Log
     db.prepare(`
@@ -381,6 +388,139 @@ router.post('/login-verify', async (req: Request, res: Response) => {
       // Ignore database logging errors in catch block
     }
     return res.status(401).json({ error: err.message || 'Authentication failed' });
+  }
+});
+
+/**
+ * POST /api/auth/step-up-challenge
+ * Issues a biometric authentication challenge bound to a specific high-risk action intent
+ */
+router.post('/step-up-challenge', async (req: Request, res: Response) => {
+  try {
+    const sessionId = req.cookies?.session_id;
+    if (!sessionId) {
+      return res.status(401).json({ error: 'Active session required for step-up challenge' });
+    }
+
+    const session = db.prepare('SELECT id, user_id FROM sessions WHERE id = ? AND expires_at > ?').get(sessionId, Date.now()) as Session | undefined;
+    if (!session) {
+      return res.status(401).json({ error: 'Valid session required' });
+    }
+
+    const { httpMethod, route, body } = req.body;
+    if (!httpMethod || !route) {
+      return res.status(400).json({ error: 'Missing httpMethod or route' });
+    }
+
+    const intentHash = RiskService.computeIntentHash(httpMethod, route, body || {});
+    const credentials = db.prepare('SELECT id, transports FROM credentials WHERE user_id = ? AND status = "ACTIVE"').all(session.user_id) as Credential[];
+
+    if (credentials.length === 0) {
+      return res.status(400).json({ error: 'No active authenticators enrolled for step-up' });
+    }
+
+    const options = await generateAuthenticationOptions({
+      rpID,
+      allowCredentials: credentials.map((c) => ({
+        id: c.id,
+        type: 'public-key' as const,
+        transports: c.transports ? JSON.parse(c.transports) : undefined,
+      })),
+      timeout: 60000,
+    });
+
+    challengeStore.set(`stepup_${session.id}`, {
+      challenge: options.challenge,
+      userId: session.user_id,
+      type: 'authentication',
+      expiresAt: Date.now() + 60000,
+    });
+
+    return res.json({ options, intentHash });
+  } catch (err: any) {
+    console.error('[WebAuthn] step-up-challenge error:', err);
+    return res.status(500).json({ error: 'Failed to generate step-up challenge' });
+  }
+});
+
+/**
+ * POST /api/auth/step-up-verify
+ * Validates biometric assertion for the action-bound challenge and issues a single-use Step-Up Token
+ */
+router.post('/step-up-verify', async (req: Request, res: Response) => {
+  try {
+    const sessionId = req.cookies?.session_id;
+    if (!sessionId) {
+      return res.status(401).json({ error: 'Active session required for step-up verification' });
+    }
+
+    const session = db.prepare('SELECT id, user_id FROM sessions WHERE id = ? AND expires_at > ?').get(sessionId, Date.now()) as Session | undefined;
+    if (!session) {
+      return res.status(401).json({ error: 'Valid session required' });
+    }
+
+    const { assertionResponse, httpMethod, route, body } = req.body;
+    if (!assertionResponse || !httpMethod || !route) {
+      return res.status(400).json({ error: 'Missing assertionResponse, httpMethod or route' });
+    }
+
+    const stored = challengeStore.get(`stepup_${session.id}`);
+    if (!stored || stored.expiresAt < Date.now()) {
+      return res.status(400).json({ error: 'Step-up challenge expired or not found' });
+    }
+    challengeStore.delete(`stepup_${session.id}`);
+
+    const cred = db.prepare('SELECT id, public_key, counter, transports FROM credentials WHERE id = ? AND user_id = ? AND status = "ACTIVE"').get(assertionResponse.id, session.user_id) as Credential | undefined;
+    if (!cred) {
+      return res.status(401).json({ error: 'Credential not found or revoked' });
+    }
+
+    const verification = await verifyAuthenticationResponse({
+      response: assertionResponse as AuthenticationResponseJSON,
+      expectedChallenge: stored.challenge,
+      expectedOrigin: origin,
+      expectedRPID: rpID,
+      credential: {
+        id: cred.id,
+        publicKey: new Uint8Array(cred.public_key),
+        counter: cred.counter,
+        transports: cred.transports ? JSON.parse(cred.transports) : undefined,
+      },
+      requireUserVerification: false,
+    });
+
+    if (!verification.verified) {
+      return res.status(401).json({ error: 'Biometric step-up assertion verification failed' });
+    }
+
+    const intentHash = RiskService.computeIntentHash(httpMethod, route, body || {});
+    const stepUpToken = `stup_${crypto.randomBytes(24).toString('hex')}`;
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minute validity window
+
+    db.prepare(`
+      INSERT INTO step_up_authorizations (token, user_id, session_id, http_method, route, intent_hash, expires_at, consumed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+    `).run(stepUpToken, session.user_id, session.id, httpMethod.toUpperCase(), route, intentHash, expiresAt);
+
+    // Audit log
+    db.prepare(`
+      INSERT INTO audit_events (id, type, user_id, detail, timestamp)
+      VALUES (?, 'STEP_UP_VERIFIED', ?, ?, ?)
+    `).run(
+      `aud_stup_${crypto.randomBytes(8).toString('hex')}`,
+      session.user_id,
+      JSON.stringify({ httpMethod, route, intentHash }),
+      new Date().toISOString()
+    );
+
+    return res.json({
+      success: true,
+      stepUpToken,
+      expiresAt,
+    });
+  } catch (err: any) {
+    console.error('[WebAuthn] step-up-verify error:', err);
+    return res.status(401).json({ error: err.message || 'Step-up verification failed' });
   }
 });
 
