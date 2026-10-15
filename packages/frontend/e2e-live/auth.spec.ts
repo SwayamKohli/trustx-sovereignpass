@@ -30,8 +30,10 @@ test('live bank, attacker window, SOC, agent authorization, kiosk and recovery w
   expect((await context.cookies()).some(cookie => cookie.name === 'session_id' && cookie.httpOnly && cookie.secure && cookie.sameSite === 'Strict')).toBe(true);
   const database = new Database(testInfo.config.metadata.databasePath);
   database.prepare("UPDATE users SET role = 'ADMIN' WHERE username = ?").run(username);
+  database.prepare("INSERT INTO credentials(id,user_id,public_key,counter,device_name,status,created_at,last_used_at) SELECT 'Zml4dHVyZS11bnVzZWQtYmFja3Vw',user_id,public_key,0,'Unused backup fixture','REVOKED',created_at,NULL FROM credentials WHERE user_id=(SELECT id FROM users WHERE username=?) LIMIT 1").run(username);
   database.close();
   await page.reload();
+  await expect(page.getByRole('row').filter({hasText:'Unused backup fixture'})).toContainText('Not used yet');
   await page.getByRole('button', { name: 'Admin SOC', exact: true }).click();
   await expect(page.getByText('No probe run yet.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Execute live attack runner' }).click();
@@ -39,6 +41,14 @@ test('live bank, attacker window, SOC, agent authorization, kiosk and recovery w
   await expect(page.locator('.report-counts')).toContainText('FAIL: 0');
   await page.getByRole('button', { name: 'Verify chain on server' }).click();
   await expect(page.getByText('Server verification: INTACT', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button',{name:'My account',exact:true})).toHaveCount(1);
+  await page.setViewportSize({width:390,height:844});
+  for(const section of ['Overview','Active sessions','Credentials','Login history','Audit events']){
+    await page.getByRole('navigation',{name:'SOC sections'}).getByRole('button',{name:section,exact:true}).click();
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),`SOC ${section}`).toBe(true);
+  }
+  await page.getByRole('navigation',{name:'SOC sections'}).getByRole('button',{name:'Overview',exact:true}).click();
+  await page.setViewportSize({width:1280,height:800});
   expect(await page.locator('.bounded-feed').evaluate(element => element.clientHeight <= 360)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('live-soc.png'), fullPage: true });
 

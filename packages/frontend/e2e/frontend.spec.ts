@@ -1,4 +1,18 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+
+test('public screens and expanded persona guidance fit narrow viewports without runtime errors',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  for(const width of [320,390]){
+    await page.setViewportSize({width,height:844});
+    for(const route of ['/','/register','/recovery','/access','/crypto','/persistence','/kiosk-auth','/demo']){
+      await page.goto(route);await expect(page.locator('main h1')).toBeVisible();
+      if(route==='/demo')await page.locator('.persona-guide > summary').click();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),`${route} at ${width}px`).toBe(true);
+    }
+  }
+  expect(errors).toEqual([]);
+});
 
 test('guided access is bilingual, offers a no-phone key path, and reads only static instructions with local voices',async({page})=>{
   await page.addInitScript(()=>{
@@ -46,7 +60,9 @@ test('onboarding, saved-code gate, login, add/revoke device and sign out', async
   expect(await page.evaluate(() => document.querySelector('dialog')?.contains(document.activeElement))).toBe(true);
   const download = page.waitForEvent('download');
   await modal.getByRole('button', { name: 'Download codes' }).click();
-  expect((await download).suggestedFilename()).toBe('trustx-recovery-codes.txt');
+  const downloaded=await download;
+  expect(downloaded.suggestedFilename()).toBe('trustx-recovery-codes.txt');
+  expect(await readFile((await downloaded.path())!,'utf8')).toContain(`Site: ${new URL(page.url()).origin}`);
   await modal.getByRole('checkbox').check();
   await modal.getByRole('button', { name: 'Continue to sign in' }).click();
   await page.getByLabel('Username', { exact: true }).fill('ananya');

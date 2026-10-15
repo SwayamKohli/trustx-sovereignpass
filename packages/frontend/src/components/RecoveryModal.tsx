@@ -14,7 +14,7 @@ export function RecoveryModal({ codes, onSaved, rotation = false }: { codes: str
     catch { setMessage(tr('Copy was unavailable. Use Download instead.', 'कॉपी नहीं हो सकी। डाउनलोड इस्तेमाल करें।')); }
   }
   function download() {
-    const url = URL.createObjectURL(new Blob([`${mockMode ? 'DEMO ONLY — not valid recovery codes' : 'TrustX emergency recovery codes — keep private'}\n${codes.join('\n')}\n`], { type: 'text/plain' }));
+    const url = URL.createObjectURL(new Blob([`${mockMode ? 'DEMO ONLY — not valid recovery codes' : 'TrustX emergency recovery codes — keep private'}\nSite: ${window.location.origin}\nSaved: ${new Date().toISOString()}\n${codes.join('\n')}\n`], { type: 'text/plain' }));
     const link = document.createElement('a'); link.href = url; link.download = 'trustx-recovery-codes.txt'; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setMessage(tr('Download requested. Check the file before continuing.', 'डाउनलोड शुरू किया। आगे बढ़ने से पहले फाइल जाँचें।'));

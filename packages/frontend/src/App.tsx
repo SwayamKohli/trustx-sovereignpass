@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, FlaskConical, LayoutDashboard, LogIn, PanelsTopLeft, ShieldCheck, Languages } from 'lucide-react';
+import { Bot, FlaskConical, LayoutDashboard, LogIn, PanelsTopLeft, ShieldCheck } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -133,6 +133,7 @@ export default function App() {
       {page !== 'phishing' && <nav aria-label="Header quick navigation">
         <button aria-current={page === 'access' ? 'page' : undefined} onClick={() => navigate('access')}>{tr('Access help', 'प्रवेश में सहायता')}</button>
         {session ? <button onClick={() => navigate('account')}><LayoutDashboard aria-hidden="true" />{strings.navAccount}</button> : <button onClick={() => navigate('login')}><LogIn aria-hidden="true" />{strings.navSignIn}</button>}
+        {session?.user.role === 'ADMIN' && <button aria-current={page === 'admin' ? 'page' : undefined} onClick={() => navigate('admin')}><ShieldCheck aria-hidden="true"/>{strings.navAdminSOC}</button>}
         <details ref={labMenu} className="lab-menu"><summary>{tr('Security labs', 'सुरक्षा प्रयोगशालाएँ')}</summary><div>
         <button aria-current={page === 'persistence' ? 'page' : undefined} onClick={() => navigate('persistence')}><ShieldCheck aria-hidden="true"/>PersistenceGuard</button>
         <button aria-current={page === 'demo' ? 'page' : undefined} onClick={() => navigate('demo')}><PanelsTopLeft aria-hidden="true" />{strings.navDemo}</button>
@@ -167,7 +168,6 @@ export default function App() {
             : page === 'crypto' ? <CryptoLabPage user={session?.user} />
             : page === 'agent' ? session ? <AgentShieldPage user={session.user} /> : <section><h1>Sign in to authorize an agent</h1><p>Agent capabilities require a real session and passkey approval.</p><button onClick={() => navigate('login')}>Go to sign in</button></section>
             : session ? <>
-              {session.user.role === 'ADMIN' && <nav aria-label="Signed-in views"><button aria-current={page !== 'admin' ? 'page' : undefined} onClick={() => navigate('account')}>{strings.navAccount}</button><button aria-current={page === 'admin' ? 'page' : undefined} onClick={() => navigate('admin')}>{strings.navAdminSOC}</button></nav>}
               {page === 'admin' ? <AdminSOCPage user={session.user} /> : <DashboardPage session={session} onLogout={() => { setSession(null); navigate('login'); }} />}
             </> : <>
               <nav aria-label="Account access"><button aria-current={page === 'login' ? 'page' : undefined} onClick={() => navigate('login')}>{strings.navSignIn}</button><button aria-current={page === 'register' ? 'page' : undefined} onClick={() => navigate('register')}>{strings.navCreateAccount}</button><button aria-current={page === 'recovery' ? 'page' : undefined} onClick={() => navigate('recovery')}>{strings.navRecover}</button></nav>

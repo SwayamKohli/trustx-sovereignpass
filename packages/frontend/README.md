@@ -66,4 +66,4 @@ Use `recoveryCode` and `credentialId` from the detailed task-breakdown contracts
 
 DPoP protects against remote cookie-only replay only when the server validates and binds proofs; it does not prevent same-origin XSS or complete host compromise. The PDF's path-only `htu` contract is intentionally documented as a project protocol rather than full OAuth RFC 9449 compliance. See [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449.html).
 
-AI UI and PQC remain Swayam's work; `src/features/agent/` is untouched.
+The original ownership boundary above is historical. Final integration uses `AgentShieldPage`, `PersistenceGuardPage` and `CryptoLabPage`; the unused legacy `features/agent/AgentModal.tsx` and unused static fixture exports were removed during frontend cleanup. Active preview behavior remains in `services/mock.ts`.

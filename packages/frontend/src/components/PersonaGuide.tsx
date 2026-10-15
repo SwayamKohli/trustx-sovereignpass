@@ -72,15 +72,17 @@ export function PersonaGuide({ onSelectAction }: PersonaGuideProps) {
       </div>
 
       {/* Persona selector tabs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '10px', marginBottom: '16px' }}>
         {personas.map(persona => {
           const PIcon = persona.icon;
           const isSelected = selectedPersona === persona.id;
           return (
             <button
               key={persona.id}
+              aria-pressed={isSelected}
               onClick={() => setSelectedPersona(persona.id)}
               style={{
+                display: 'block',
                 background: isSelected ? 'rgba(56, 189, 248, 0.15)' : '#edf3f0',
                 border: isSelected ? `1px solid ${persona.color}` : '1px solid #ccd8d4',
                 borderRadius: '10px',
@@ -124,7 +126,7 @@ export function PersonaGuide({ onSelectAction }: PersonaGuideProps) {
           )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginTop: '10px', fontSize: '13px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '12px', marginTop: '10px', fontSize: '13px' }}>
           <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '10px 12px', borderRadius: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#922424', fontWeight: 700, marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>
               <ShieldAlert aria-hidden="true" style={{ width: '14px', height: '14px' }} /> Real-World Attack Vulnerability

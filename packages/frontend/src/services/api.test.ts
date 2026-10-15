@@ -3,7 +3,7 @@ vi.mock('@simplewebauthn/browser', () => ({ startRegistration: vi.fn(), startAut
 vi.mock('./dpop', () => ({ createProof: vi.fn(), publicDeviceKey: vi.fn(), clearDeviceKey: vi.fn() }));
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { createProof, publicDeviceKey, clearDeviceKey } from './dpop';
-import { ApiError, completeRecovery, friendlyError, login, logout, register, request, validateAttackReport, verifyRecovery, LoginCheckRequired, finishLoginCheck } from './api';
+import { ApiError, completeRecovery, friendlyError, login, logout, register, request, validateAttackReport, verifyRecovery, LoginCheckRequired, finishLoginCheck, listDevices } from './api';
 
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -17,6 +17,12 @@ afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs();
 function reply(body: unknown, status = 200) { fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status })); }
 
 describe('real passkey contracts', () => {
+  it('accepts a never-used credential without accepting invalid date strings or missing fields', async () => {
+    const device={id:'unused-key',name:'Backup',status:'ACTIVE',lastUsed:null};
+    reply({devices:[device]});await expect(listDevices()).resolves.toEqual({devices:[device]});
+    reply({devices:[{...device,lastUsed:'not-a-date'}]});await expect(listDevices()).rejects.toThrow('Invalid list response');
+    reply({devices:[{id:'missing',name:'Missing',status:'ACTIVE'}]});await expect(listDevices()).rejects.toThrow('Invalid list response');
+  });
   it('does not auto-approve changed-context login or return a fabricated session', async () => {
     const check={pendingId:'pending',authenticationOptions:{challenge:'fresh'},risk:{score:45,level:'MEDIUM',reasons:['BROWSER_CONTEXT_CHANGED']}};
     reply({challenge:'first'});reply({error:'LOGIN_EXTRA_CHECK_REQUIRED',...check},403);

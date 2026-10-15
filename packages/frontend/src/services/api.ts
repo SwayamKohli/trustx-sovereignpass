@@ -146,7 +146,7 @@ async function list<T>(path: string, key: string, valid: (item: Record<string, u
   if (!Array.isArray(items) || !items.every(item => item && typeof item === 'object' && valid(item))) throw new Error('Invalid list response');
   return items as T[];
 }
-export const listDevices = async () => ({ devices: await list<Device>('/devices/list', 'devices', item => validString(item.id) && validString(item.name) && validStatus(item.status) && validDate(item.lastUsed)) });
+export const listDevices = async () => ({ devices: await list<Device>('/devices/list', 'devices', item => validString(item.id) && validString(item.name) && validStatus(item.status) && (item.lastUsed === null || validDate(item.lastUsed))) });
 export const adminCredentials = async () => ({ credentials: await list<Credential>('/admin/credentials', 'credentials', item => validString(item.id) && validString(item.username) && validString(item.deviceName) && validStatus(item.status) && validDate(item.createdAt) && validDate(item.lastUsedAt)) });
 export const adminSessions = async () => ({ sessions: await list<ActiveSession>('/admin/sessions', 'sessions', item => validString(item.sessionId) && validString(item.username) && typeof item.isKiosk === 'boolean' && validString(item.ipAddress) && validString(item.userAgent) && validDate(item.createdAt) && typeof item.expiresAt === 'number' && Number.isFinite(item.expiresAt)) });
 export const adminLogs = async () => ({ logs: await list<AuditEvent>('/admin/audit-logs', 'logs', item => validString(item.id) && validString(item.eventType) && validDate(item.timestamp) && (item.userId === null || validString(item.userId)) && !!item.details && typeof item.details === 'object') });

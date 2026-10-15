@@ -47,6 +47,11 @@ test('real local Qwen plan drives PersistenceGuard fixture requests and visual e
   await page.getByText('Actual structured model output',{exact:true}).click();
   await expect(page.locator('pre').filter({hasText:'enroll_passkey'}).first()).toBeVisible();
   await page.screenshot({path:testInfo.outputPath('persistence-injection-experiment.png'),fullPage:true});
+  await page.route('**/api/persistence/jobs',route=>route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({error:'CHALLENGE_ALREADY_RUNNING'})}));
+  await page.getByRole('button',{name:'Run real AI persistence challenge'}).click();
+  await expect(page.getByRole('alert')).toContainText('CHALLENGE_ALREADY_RUNNING');
+  await expect(page.getByText('Actual structured model output',{exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Recorded evidence replay',exact:true})).toBeVisible();
   await page.emulateMedia({reducedMotion:'reduce'});
   await expect(page.getByRole('button',{name:'Play replay',exact:true})).toBeDisabled();
   await expect(page.getByText('Reduced motion enabled:',{exact:false})).toBeVisible();
