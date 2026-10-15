@@ -9,6 +9,9 @@ import cookieParser from 'cookie-parser';
 import { serverConfig, loadSslCertificates, createViteReverseProxy } from './config/server.config';
 import { initDb } from './db/index';
 import authRoutes from './routes/auth.routes';
+import recoveryRoutes from './routes/recovery.routes';
+import deviceRoutes from './routes/devices.routes';
+import kioskRoutes from './routes/kiosk.routes';
 import agentRoutes from './routes/agent.routes';
 
 const app = express();
@@ -36,10 +39,13 @@ app.get('/api/health', healthHandler);
 // JSON body parsing for API endpoints
 app.use(express.json());
 
-// Mount authentication routes (Sanchit)
+// Mount core identity routes (Sanchit - Role 3)
 app.use('/api/auth', authRoutes);
+app.use('/api/recovery', recoveryRoutes);
+app.use('/api/devices', deviceRoutes);
+app.use('/api/kiosk', kioskRoutes);
 
-// Mount agent delegation routes (Swayam)
+// Mount agent delegation routes (Swayam - Role 4)
 app.use('/api/agent', agentRoutes);
 
 // Reverse-proxy all non-API requests to the internal Vite dev server (port 5173)

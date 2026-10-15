@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
   is_kiosk INTEGER NOT NULL DEFAULT 0 CHECK(is_kiosk IN (0, 1)),
+  dpop_public_key TEXT,
   ip_address TEXT NOT NULL,
   user_agent TEXT NOT NULL,
   last_active_at INTEGER NOT NULL
@@ -173,6 +174,7 @@ export interface Session {
   created_at: string;
   expires_at: number;
   is_kiosk: 0 | 1;
+  dpop_public_key?: string | null;
   ip_address: string;
   user_agent: string;
   last_active_at: number;

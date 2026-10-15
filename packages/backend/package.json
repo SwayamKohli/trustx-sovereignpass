@@ -11,6 +11,7 @@
     "test": "ts-node test/services.test.ts",
     "test:attacks": "tsx test/test_attacks.ts",
     "test:challenges": "tsx src/scripts/test-challenges.ts",
+    "test:lifecycle": "tsx test/test_identity_lifecycle.ts",
     "audit:export": "tsx src/scripts/export-audit-log.ts",
     "start": "node dist/server.js"
   },
