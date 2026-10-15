@@ -16,6 +16,7 @@ import agentRoutes from './routes/agent.routes';
 import adminRoutes from './routes/admin.routes';
 import cryptoRoutes from './routes/crypto.routes';
 import demoRoutes from './routes/demo.routes';
+import persistenceRoutes from './routes/persistence.routes';
 
 const app = express();
 app.use((req,res,next)=>{
@@ -75,6 +76,7 @@ app.use('/api/admin', adminRoutes);
 // Mount post-quantum cryptography & hardware key diagnostics (Swayam - Role 4)
 app.use('/api/crypto', cryptoRoutes);
 app.use('/api/demo', demoRoutes);
+app.use('/api/persistence', persistenceRoutes);
 
 // Reverse-proxy all non-API requests to the internal Vite dev server (port 5173)
 // This ensures that the citizen browser interacts solely with https://bank.local:3000

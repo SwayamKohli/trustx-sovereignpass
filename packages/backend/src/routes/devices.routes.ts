@@ -10,12 +10,18 @@ import {
 } from '@simplewebauthn/server';
 import { db } from '../db/index';
 import { requireSession } from '../middleware/session.middleware';
-import { requireStepUpAuthorization, consumeStepUpAuthorization } from '../middleware/stepup.middleware';
+import { consumeStepUpAuthorization } from '../middleware/stepup.middleware';
 import { rpName } from '../webauthn/config';
 import { getEffectiveRpID, getEffectiveOrigin } from './auth.routes';
 import type { Credential } from '../db/schema';
+import { requirePersistenceAuthorization } from '../middleware/persistence.middleware';
 
 const router = Router();
+
+router.get('/security-events', requireSession, (req,res) => {
+  const events=db.prepare("SELECT id,type,timestamp FROM audit_events WHERE user_id=? AND type IN ('SECONDARY_DEVICE_ENROLLED','CREDENTIAL_REVOKED','RECOVERY_CODES_ROTATED','ACCOUNT_RECOVERY_COMPLETED','RECOVERY_PHASE1_STAGED','PERSISTENCE_GUARD_DENIED') ORDER BY rowid DESC LIMIT 20").all(req.user!.id);
+  return res.json({events,delivery:'IN_APP_ONLY'});
+});
 
 // In-memory challenge store for secondary device enrollments: userId -> { challenge, expiresAt }
 const deviceChallenges = new Map<string, { challenge: string; expiresAt: number }>();
@@ -46,7 +52,7 @@ router.get('/list', requireSession, (req: Request, res: Response) => {
  * POST /api/devices/register-challenge (Secondary Device Enrollment)
  * Initiates registration ceremony to enroll an additional authenticator for the active user.
  */
-router.post('/register-challenge', requireSession, requireStepUpAuthorization({ alwaysEnforce: true }), async (req: Request, res: Response) => {
+router.post('/register-challenge', requireSession, requirePersistenceAuthorization('enrollment'), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     if (req.session!.is_kiosk) return res.status(403).json({ error: 'KIOSK_ENROLLMENT_FORBIDDEN' });
@@ -174,7 +180,7 @@ router.post('/register-verify', requireSession, async (req: Request, res: Respon
  * Strictly verifies ownership to prevent BOLA/IDOR attacks.
  * Immediately terminates all active SQLite sessions tied to that revoked credential.
  */
-router.post('/revoke', requireSession, requireStepUpAuthorization({ alwaysEnforce: true }), (req: Request, res: Response) => {
+router.post('/revoke', requireSession, requirePersistenceAuthorization('revocation'), (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const { credentialId } = req.body;

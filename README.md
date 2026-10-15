@@ -14,7 +14,7 @@ For the final evaluation, start with [the current runbook and security contract]
 
 Authentication infrastructure faces critical challenges: credential harvesting, SIM swapping, and Adversary-in-the-Middle (AiTM) reverse-proxy phishing attacks bypass legacy passwords and SMS OTPs. Furthermore, the rapid adoption of autonomous AI agents introduces prompt-injection risks where compromised LLM agents can be manipulated into executing unauthorized transactions.
 
-**TrustX SovereignPass** is a working demonstration using WebAuthn passkeys, server-side shared-terminal session controls and challenge-bound authorization for delegated actions. It is not a certified identity provider, a production banking system or a connected AI agent. See the current threat model for the precise boundaries.
+**TrustX SovereignPass** is a working demonstration using WebAuthn passkeys, server-side shared-terminal session controls and challenge-bound authorization for delegated actions. PersistenceGuard connects a real local Ollama model to an allowlisted, disposable-account lifecycle experiment. It is not a certified identity provider or a production banking system. See the current threat model for the precise boundaries.
 
 ---
 
@@ -23,10 +23,11 @@ Authentication infrastructure faces critical challenges: credential harvesting, 
 1. **Origin-Bound Phishing Resistance:** Authenticator RP-ID checks and server challenge/origin verification reject look-alike sites. The default laptop profile uses `http://localhost:3000`; the attacker uses the distinct `http://127.0.0.1:3001` host. Named-domain and phone profiles require trusted HTTPS.
 2. **Shared-Device Kiosk Security:** Provides 15-minute ephemeral server sessions via cross-device QR authentication without persisting credentials on public workstations.
 3. **Zero-Downgrade Account Recovery:** Eliminates SMS fallback in favor of high-entropy, single-use emergency recovery bearer secrets hashed via Argon2id and consumed atomically.
-4. **IntentLock Action Authorization:** Fresh passkey verification approves an exact sandbox operation. A persisted, session-bound opaque capability permits one matching execution; consumption, payment and audit commit atomically. Real adversarial API requests demonstrate the boundary; no live LLM is connected.
+4. **IntentLock Action Authorization:** Fresh passkey verification approves an exact sandbox operation. A persisted, session-bound opaque capability permits one matching execution; consumption, payment and audit commit atomically. This payment comparison is separate from the real local model in PersistenceGuard.
 5. **Post-Quantum Migration Benchmark (Optional Research Stretch):** An empirical benchmark evaluating NIST FIPS 204 (ML-DSA) key sizes, signing times, and verification latency against classical ECDSA P-256.
 6. **Guided Access and Recovery Readiness:** English/Hindi core guidance, optional local-only spoken instructions, explicit FIDO2-key choice, trusted-device QR access and fresh-passkey-protected recovery-code replacement. Basic phones alone cannot run WebAuthn.
 7. **Actual Context Checks and Admin History:** Changed IP/browser context requires explicit fresh passkey verification before login completes. SOC shows paginated, filterable real login events; it does not invent locations or risk results.
+8. **PersistenceGuard:** Shared fresh-authorization policy for enrollment, revocation and recovery-code replacement, with separate one-time recovery authority. Real local Qwen and Llama models propose allowlisted lifecycle actions; the experiment compares disposable weak-baseline and protected accounts, independent attacker login, unchanged authentication state and legitimate owner access. A Framer Motion evidence map offers clearly labelled replay without executing new requests. Open **Security labs → PersistenceGuard** as an administrator. See [setup and presentation steps](docs/final-evaluation.md#persistenceguard--real-local-model).
 
 ---
 

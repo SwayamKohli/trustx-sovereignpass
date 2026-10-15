@@ -14,12 +14,13 @@ import { RecoveryModal } from './components/RecoveryModal';
 import { KioskQRModal } from './components/KioskQRModal';
 import { PersonaGuide } from './components/PersonaGuide';
 import { AccessHelpPage } from './pages/AccessHelpPage';
+import { PersistenceGuardPage } from './pages/PersistenceGuardPage';
 import { ApiError, currentSession, mockMode } from './services/api';
 import { clearDeviceKey } from './services/dpop';
 import { expiryMilliseconds, type Session } from './services/types';
 import { getLanguage, setLanguage, t, tr, type Language } from './services/i18n';
 
-const routes = { login: '/', register: '/register', recovery: '/recovery', account: '/account', admin: '/admin', phone: '/kiosk-auth', agent: '/agent', crypto: '/crypto', demo: '/demo', phishing: '/phishing', access: '/access' } as const;
+const routes = { login: '/', register: '/register', recovery: '/recovery', account: '/account', admin: '/admin', phone: '/kiosk-auth', agent: '/agent', crypto: '/crypto', demo: '/demo', phishing: '/phishing', access: '/access', persistence:'/persistence' } as const;
 type Page = keyof typeof routes;
 function locationPage(): Page { return (Object.entries(routes).find(([, path]) => path === window.location.pathname)?.[0] as Page) ?? 'login'; }
 
@@ -80,7 +81,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [session]);
 
-  const publicLab = ['demo', 'crypto', 'phishing', 'access'].includes(page);
+  const publicLab = ['demo', 'crypto', 'phishing', 'access', 'persistence'].includes(page);
   const wide = !!session || publicLab;
   return <>
     <a className="skip" href="#content">{tr('Skip to content', 'मुख्य जानकारी पर जाएँ')}</a>
@@ -133,6 +134,7 @@ export default function App() {
         <button aria-current={page === 'access' ? 'page' : undefined} onClick={() => navigate('access')}>{tr('Access help', 'प्रवेश में सहायता')}</button>
         {session ? <button onClick={() => navigate('account')}><LayoutDashboard aria-hidden="true" />{strings.navAccount}</button> : <button onClick={() => navigate('login')}><LogIn aria-hidden="true" />{strings.navSignIn}</button>}
         <details ref={labMenu} className="lab-menu"><summary>{tr('Security labs', 'सुरक्षा प्रयोगशालाएँ')}</summary><div>
+        <button aria-current={page === 'persistence' ? 'page' : undefined} onClick={() => navigate('persistence')}><ShieldCheck aria-hidden="true"/>PersistenceGuard</button>
         <button aria-current={page === 'demo' ? 'page' : undefined} onClick={() => navigate('demo')}><PanelsTopLeft aria-hidden="true" />{strings.navDemo}</button>
         <button aria-current={page === 'agent' ? 'page' : undefined} onClick={() => navigate('agent')}><Bot aria-hidden="true" />{strings.navAgent}</button>
         <button aria-current={page === 'crypto' ? 'page' : undefined} onClick={() => navigate('crypto')}><FlaskConical aria-hidden="true" />{strings.navCrypto}</button>
@@ -160,6 +162,7 @@ export default function App() {
             : page === 'phishing' ? <PhishingLabPage />
             : page === 'phone' ? <KioskAuthPage />
             : page === 'access' ? <AccessHelpPage onChoose={(target, key = false) => { setSecurityKey(key); if (target === 'kiosk') setKiosk(true); else navigate(target); }} />
+            : page === 'persistence' ? <PersistenceGuardPage user={session?.user} />
             : page === 'demo' ? <DemoArenaPage session={session} onSignIn={() => navigate('login')} />
             : page === 'crypto' ? <CryptoLabPage user={session?.user} />
             : page === 'agent' ? session ? <AgentShieldPage user={session.user} /> : <section><h1>Sign in to authorize an agent</h1><p>Agent capabilities require a real session and passkey approval.</p><button onClick={() => navigate('login')}>Go to sign in</button></section>

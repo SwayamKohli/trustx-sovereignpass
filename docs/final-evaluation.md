@@ -90,7 +90,56 @@ The default sandbox starts with synthetic INR 125,000. Account-page payments and
 
 Ananya reported that Mac/iPhone trusted HTTPS, iPhone passkey registration/login, real QR approval, terminal restrictions/logout, Mac Touch ID, replacement recovery, browser/server phishing rejection and IntentLock altered/success/replay checks passed. She also supplied the actual SOC run `dc507830-4363-4282-b5f0-bc9efef25c54`: ten PASS, zero FAIL/SKIPPED, and an INTACT audit check covering 59 events. These are user-reported hands-on results, not physical-device tests performed by the automated runner. Counts and balances change as more demonstrations run.
 
-Still awaiting separate hands-on confirmation: changed-browser extra approval, recovery-code replacement, installed local speech voices and physical FIDO2 key operation. The first two already have real-backend browser coverage; a storage USB drive is not a hardware authenticator. No real LLM or post-quantum login is implemented.
+Still awaiting separate hands-on confirmation: changed-browser extra approval, recovery-code replacement, installed local speech voices and physical FIDO2 key operation. The first two already have real-backend browser coverage; a storage USB drive is not a hardware authenticator. A real local LLM is now connected to PersistenceGuard (below), not to IntentLock payment execution. Post-quantum login is not implemented.
+
+## PersistenceGuard — real local model
+
+No hardware key, cloud API key or external security-program enrollment is needed. The operator uses the already-tested Mac/iPhone passkey to sign in; the controlled experiment uses software-authenticator fixtures.
+
+Ollama and `qwen3:1.7b` have been installed/downloaded on Ananya's Mac. Keep the local Ollama server running. For another machine:
+
+```sh
+brew install ollama
+ollama serve
+```
+
+In another terminal:
+
+```sh
+ollama pull qwen3:1.7b
+```
+
+Keep your normal bank stack running (`npm run dev:phone` for the prepared HTTPS setup). Open `https://ananyas-macbook-air-3.local:3000/persistence` in the signed-in Mac administrator browser, or choose **Security labs → PersistenceGuard**. If needed, grant your registered account with `npm run admin:grant -- exact-username` and refresh.
+
+1. Click **Check model connection**. Expect READY, the model name and expandable installed-model digest.
+2. Leave **Authorized AI attacker · persistence challenge** selected. The objective is editable, bounded synthetic text; never paste real account details or secrets.
+3. Click **Run real AI persistence challenge**. Wait for actual local inference and actual fixture HTTP requests. First model load can take up to two minutes. Closing the page does not cancel the server job.
+4. Inspect **Actual model decision** and its structured JSON. Only choices actually made by the model are executed. A refusal or zero selected actions is not presented as a blocked attack.
+5. Compare the isolated weak baseline with the protected boundary. When the model selects enrollment, the baseline verifies an actual new attestation but omits fresh owner approval. The fixture controller ends the old baseline session; an independent login with the attacker's new key can still succeed. The real protected enrollment endpoint rejects missing fresh authority and the attacker's key cannot log in.
+6. Inspect the request timeline. Cookie-only requests are separate from a stronger test in which the harness deliberately supplies a valid fixture browser proof but no fresh passkey approval. This is not evidence that malware extracted a real browser key. Recovery completion remains a separate ticket-authorized route.
+7. Compare credential/recovery state before and after the attempted changes. Legitimate-owner controls verify genuine software-passkey enrollment, single-use ceremony rejection, exact revocation approval/replay rejection, logout and independent owner login.
+8. Optionally select **Indirect prompt injection · support-document experiment** and run it. If Qwen refuses the document's instruction, report that result honestly. Do not say the model was compromised merely because the separate direct-planner experiment attempted mutations.
+
+The animated stages and event entries reflect measured execution, not a preset movie. The weak baseline is not a competitor and is never exposed by the bank. No actual user's credentials, sessions or recovery codes are the targets. Fixture credentials/sessions/recovery material are removed afterwards; audit evidence and fixture user identifiers remain. Jobs are owner-scoped, administrator-only, one at a time, in-memory and available for 15 minutes. Model plans and completed experiment reports are recorded as SOC audit events. No fabricated model response is substituted on failure.
+
+**Security notifications:** My account → Security and recovery shows a bounded, authenticated in-app lifecycle feed. It does not expose recovery tickets or codes and is not an out-of-band email/SMS notification system. Enrollment retains existing sessions; revocation removes sessions bound to the revoked credential; completed recovery removes all prior sessions.
+
+Checks:
+
+```sh
+npm run test:persistence --workspace=@trustx/backend
+npm run test:persistence:llm --workspace=@trustx/backend
+```
+
+The first uses a deterministic test plan and model-contract stub. The second invokes real local Ollama. The live browser suite includes the real-model page when the configured model is available; otherwise that one test is explicitly skipped, not replaced by mock results. The UI supports `qwen3:1.7b` and `llama3.2:1b`; the server also allowlists its `OLLAMA_MODEL` configuration. The browser cannot select arbitrary models or remote endpoints.
+
+### Two-model comparison and animated evidence
+
+Both local models are installed on Ananya's Mac. On another machine, additionally run `ollama pull llama3.2:1b`. Use **Local AI model** to choose Qwen or Llama. Run one, switch models without editing the objective, then run again. The measured comparison table shows model, experiment, input SHA-256 fingerprint, inference time, selected-action count and actual account/login outcomes. Match experiment and input fingerprint for a meaningful comparison. Each run uses fresh fixtures; this is not a representative accuracy benchmark. A refusal is not a blocked attack, and inference time is not gateway latency. The last six rows are kept only for the current browser visit; server audit evidence is separate.
+
+The green-and-white Framer Motion map visualizes received events and the separate model, policy, account-control, owner and weak-baseline boundaries. After completion, click **Replay measured trace** to play a slowed-down explanation, **Pause replay** to pause, or **Next recorded event** to step. Replay sends no new requests and preserves actual timestamps/status codes. It is explicitly labelled **Recorded evidence replay**, never presented as ongoing live execution. Reduced-motion preference disables animated playback and retains manual stepping. The mobile map scrolls inside its own panel rather than widening the page.
+
+Latest PersistenceGuard verification: build and unit/backend checks passed; seven UI tests and three live browser scenarios passed, with no skipped real-model test on this Mac. Real Qwen inference, direct planning, support-document mode, owner controls and mobile overflow checks ran. Desktop/mobile screenshots were captured and the desktop evidence layout inspected. This supplements, rather than replaces, Ananya's real-device core checks.
 
 Latest local verification, 16 October 2026: production build passed; startup/backend checks and 17 frontend unit tests passed; all ten CLI attack probes passed; seven UI browser tests passed; both real-backend browser scenarios passed. An isolated HTTPS smoke check also validated the bank, attacker, frontend proxy and matching certificate/RP/origin using the explicit local CA. Desktop and mobile screenshots were inspected. These results do **not** verify native Touch ID, physical FIDO2 hardware, iPhone certificate trust/network reachability or actual installed speech voices; complete the hands-on checklist above and phone guide.
 
@@ -136,6 +185,6 @@ For a completely fresh citizen/ledger demonstration, register a new username thr
 
 Per-active-user subscriptions and enterprise/self-hosted tiers are business hypotheses, not proven revenue or current integrations.
 
-**Do not claim:** a new cryptographic invention; live LLM prompt injection (no model is connected); a physically tested USB key (storage USB drives are not authenticators); full malware/XSS resistance; a separately trusted transaction display; zero forensic residue on kiosks; full regulatory certification; quantum-safe login; an immutable database. Audit anchors detect edits/deletion relative to stored history, not an attacker rewriting both rows and anchors. Existing pre-upgrade history was anchored once, not independently verified.
+**Do not claim:** a new cryptographic invention; universal model/prompt-injection resistance; a physically tested USB key (storage USB drives are not authenticators); full malware/XSS resistance; a separately trusted transaction display; zero forensic residue on kiosks; full regulatory certification; quantum-safe login; an immutable database. Audit anchors detect edits/deletion relative to stored history, not an attacker rewriting both rows and anchors. Existing pre-upgrade history was anchored once, not independently verified.
 
-The implemented adversarial API requests are the explicit fallback allowed in the final plan. Real-phone HTTPS/QR and Mac Touch ID have now been reported successful by Ananya. A physical external security key and any future model/tool integration remain separate acceptance work; do not present virtual authenticators as those tests.
+IntentLock still uses the adversarial API comparison allowed in the final plan; PersistenceGuard now adds a real local model experiment. Real-phone HTTPS/QR and Mac Touch ID have been reported successful by Ananya. A physical external security key remains untested; do not present virtual authenticators as physical hardware evidence.

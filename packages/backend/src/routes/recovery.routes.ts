@@ -15,7 +15,8 @@ import { getEffectiveRpID, getEffectiveOrigin, generateRecoveryCodes } from './a
 import type { User, RecoveryCode, PendingRecovery } from '../db/schema';
 import { serializeDevicePublicKey } from '../middleware/dpop.middleware';
 import { requireSession } from '../middleware/session.middleware';
-import { requireStepUpAuthorization, consumeStepUpAuthorization } from '../middleware/stepup.middleware';
+import { consumeStepUpAuthorization } from '../middleware/stepup.middleware';
+import { requirePersistenceAuthorization } from '../middleware/persistence.middleware';
 
 const router = Router();
 const rotations = new Set<string>();
@@ -26,7 +27,7 @@ router.get('/status', requireSession, (req,res) => {
   return res.json({ remainingCodes, activePasskeys });
 });
 
-router.post('/rotate-codes', requireSession, requireStepUpAuthorization({alwaysEnforce:true}), async (req,res) => {
+router.post('/rotate-codes', requireSession, requirePersistenceAuthorization('recoveryCodes'), async (req,res) => {
   if (req.session!.is_kiosk) return res.status(403).json({error:'KIOSK_RECOVERY_ROTATION_FORBIDDEN'});
   if (rotations.has(req.user!.id)) return res.status(409).json({error:'RECOVERY_ROTATION_IN_PROGRESS'});
   rotations.add(req.user!.id);

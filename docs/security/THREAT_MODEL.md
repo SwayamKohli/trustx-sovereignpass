@@ -49,7 +49,7 @@ If all passkeys and all codes are lost, recovery fails closed. There is no passw
 2. Full endpoint/root compromise, physical coercion, malicious authenticator firmware or an independently compromised passkey-sync account.
 3. QR relay/social engineering: a matching display code helps avoid mistakes, but does not establish physical proximity or defeat every approval relay.
 4. A real intercepted reverse-proxy attack. The standalone server-origin probe is a crafted assertion, explicitly not an intercepted valid browser signature.
-5. Live model prompt injection. No LLM is connected. Actual adversarial API requests test the execution boundary instead; a future agent must expose only approved tools/routes.
+5. General autonomous-agent compromise or universal prompt-injection detection. PersistenceGuard connects real local Ollama inference to four allowlisted fixture actions only. The direct planner is an explicitly authorized adversarial experiment, not evidence that prompt injection succeeded. Its separate support-document mode may refuse or propose changes; actual model output is shown without forcing an attack. No arbitrary networking, shell access or real user secrets are given to the model. The intentionally weak baseline is ephemeral and never mounted on the bank server.
 6. Real financial settlement. Sandbox INR and the deliberately vulnerable comparison endpoint do not move money.
 7. Post-quantum authentication. The PQC page benchmarks ECDSA versus ML-DSA; it does not change WebAuthn authentication algorithms.
 8. Database administrator/server compromise rewriting both audit events and their anchors. Pre-upgrade history was anchored once, not independently validated.
