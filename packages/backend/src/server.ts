@@ -14,6 +14,7 @@ import deviceRoutes from './routes/devices.routes';
 import kioskRoutes from './routes/kiosk.routes';
 import agentRoutes from './routes/agent.routes';
 import adminRoutes from './routes/admin.routes';
+import cryptoRoutes from './routes/crypto.routes';
 
 const app = express();
 
@@ -60,6 +61,9 @@ app.use('/api/agent', agentRoutes);
 
 // Mount admin SOC routes (Swayam)
 app.use('/api/admin', adminRoutes);
+
+// Mount post-quantum cryptography & hardware key diagnostics (Swayam - Role 4)
+app.use('/api/crypto', cryptoRoutes);
 
 // Reverse-proxy all non-API requests to the internal Vite dev server (port 5173)
 // This ensures that the citizen browser interacts solely with https://bank.local:3000

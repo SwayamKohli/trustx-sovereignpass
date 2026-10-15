@@ -10,6 +10,7 @@ import {
 } from '@simplewebauthn/server';
 import { db } from '../db/index';
 import { rpID, origin } from '../webauthn/config';
+import { getEffectiveRpID, getEffectiveOrigin } from './auth.routes';
 import type { User, Credential, KioskAuthorization } from '../db/schema';
 
 const router = Router();
@@ -34,7 +35,8 @@ router.post('/qr-challenge', (req: Request, res: Response) => {
 
     const tokenHash = hashSecret(token);
     const secretHash = hashSecret(kioskClientSecret);
-    const qrData = `${origin}/kiosk-auth?sid=${kioskSessionId}&token=${token}`;
+    const effectiveOrigin = getEffectiveOrigin(req);
+    const qrData = `${effectiveOrigin}/kiosk-auth?sid=${kioskSessionId}&token=${token}`;
 
     db.prepare(`
       INSERT INTO kiosk_authorizations (
@@ -108,8 +110,9 @@ router.post('/qr-auth-challenge', async (req: Request, res: Response) => {
       transports: cred.transports ? JSON.parse(cred.transports) : undefined,
     }));
 
+    const effectiveRpID = getEffectiveRpID(req);
     const options = await generateAuthenticationOptions({
-      rpID,
+      rpID: effectiveRpID,
       allowCredentials,
       timeout: 60000,
     });
@@ -125,6 +128,7 @@ router.post('/qr-auth-challenge', async (req: Request, res: Response) => {
       challenge: options.challenge,
       allowCredentials: options.allowCredentials,
       timeout: 60000,
+      displayCode: kiosk.display_code,
     });
   } catch (err: any) {
     console.error('[Kiosk] qr-auth-challenge error:', err);
@@ -138,8 +142,9 @@ router.post('/qr-auth-challenge', async (req: Request, res: Response) => {
  */
 router.post('/qr-authorize', async (req: Request, res: Response) => {
   try {
-    const { kioskSessionId, token, confirmationCode, assertionResponse } = req.body;
-    if (!kioskSessionId || !token || confirmationCode === undefined || !assertionResponse) {
+    const { kioskSessionId, token, confirmationCode, confirmedCode, assertionResponse } = req.body;
+    const finalCode = confirmationCode !== undefined ? confirmationCode : confirmedCode;
+    if (!kioskSessionId || !token || finalCode === undefined || !assertionResponse) {
       return res.status(400).json({ error: 'Missing kioskSessionId, token, confirmationCode, or assertionResponse' });
     }
 
@@ -155,14 +160,14 @@ router.post('/qr-authorize', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Kiosk session not ready for authorization or expired' });
     }
 
-    if (kiosk.display_code !== Number(confirmationCode)) {
+    if (kiosk.display_code !== Number(finalCode)) {
       db.prepare(`
         INSERT INTO audit_events (id, type, user_id, detail, timestamp)
         VALUES (?, 'KIOSK_CONFIRMATION_MISMATCH', ?, ?, ?)
       `).run(
         `aud_${crypto.randomBytes(8).toString('hex')}`,
         kiosk.user_id,
-        JSON.stringify({ expected: kiosk.display_code, received: confirmationCode }),
+        JSON.stringify({ expected: kiosk.display_code, received: finalCode }),
         new Date().toISOString()
       );
       return res.status(400).json({ error: 'Invalid confirmation code' });
@@ -180,11 +185,14 @@ router.post('/qr-authorize', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Credential not found or revoked' });
     }
 
+    const effectiveOrigin = getEffectiveOrigin(req);
+    const effectiveRpID = getEffectiveRpID(req);
+
     const verification = await verifyAuthenticationResponse({
       response: assertionResponse as AuthenticationResponseJSON,
       expectedChallenge: kiosk.challenge,
-      expectedOrigin: origin,
-      expectedRPID: rpID,
+      expectedOrigin: effectiveOrigin,
+      expectedRPID: effectiveRpID,
       credential: {
         id: cred.id,
         publicKey: new Uint8Array(cred.public_key),

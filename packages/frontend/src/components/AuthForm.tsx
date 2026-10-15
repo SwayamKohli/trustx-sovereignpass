@@ -10,7 +10,14 @@ export function AuthForm({ kind, onSubmit }: { kind: 'register' | 'login'; onSub
     const name = username.trim();
     if (!name) { setError('Enter your username.'); return; }
     setBusy(true); setError('');
-    try { await onSubmit(name); } catch (err) { setError(friendlyError(err)); } finally { setBusy(false); }
+    try {
+      await onSubmit(name);
+    } catch (err) {
+      console.error('[TrustX WebAuthn Error]:', err);
+      setError(friendlyError(err));
+    } finally {
+      setBusy(false);
+    }
   }
   return <form onSubmit={submit} aria-busy={busy}>
     <p className="eyebrow">{kind === 'register' ? 'Your first step' : 'Welcome back'}</p>
