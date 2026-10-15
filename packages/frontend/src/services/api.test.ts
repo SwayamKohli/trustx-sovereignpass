@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@simplewebauthn/browser', () => ({ startRegistration: vi.fn(), startAuthentication: vi.fn(), browserSupportsWebAuthn: () => true }));
+vi.mock('./dpop', () => ({ createProof: vi.fn(), publicDeviceKey: vi.fn(), clearDeviceKey: vi.fn() }));
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import { ApiError, friendlyError, login, logout, register, request } from './api';
+import { createProof, publicDeviceKey, clearDeviceKey } from './dpop';
+import { ApiError, completeRecovery, friendlyError, login, logout, register, request, validateAttackReport, verifyRecovery } from './api';
 
 const fetchMock = vi.fn();
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
-  vi.stubGlobal('window', { isSecureContext: true });
+  vi.stubGlobal('window', { isSecureContext: true, dispatchEvent: vi.fn() });
+  vi.mocked(createProof).mockImplementation(async () => `proof-${crypto.randomUUID()}`);
+  vi.mocked(publicDeviceKey).mockResolvedValue({ kty: 'EC', crv: 'P-256', x: 'public-x', y: 'public-y' });
+  vi.mocked(clearDeviceKey).mockResolvedValue();
 });
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 function reply(body: unknown, status = 200) { fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status })); }
@@ -56,12 +61,71 @@ describe('real passkey contracts', () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     await expect(logout()).resolves.toBeUndefined();
     reply({ success: false });
-    await expect(logout()).rejects.toThrow('Invalid logout response');
+    await expect(logout()).rejects.toThrow('Server did not confirm');
+    reply(null);
+    await expect(logout()).rejects.toThrow('Server did not confirm');
   });
   it('rejects non-JSON responses and maps rate limits to readable messages', async () => {
     fetchMock.mockResolvedValueOnce(new Response('<html>proxy missing</html>'));
     await expect(request('/devices/list')).rejects.toThrow();
     expect(friendlyError(new ApiError(429))).toContain('wait');
+  });
+  it('sends the public binding key at login and fresh proofs on protected requests', async () => {
+    reply({ challenge: 'challenge' }); reply({ success: true, user: { id: 'u1', username: 'alice', role: 'USER' } });
+    vi.mocked(startAuthentication).mockResolvedValueOnce({ id: 'credential' } as Awaited<ReturnType<typeof startAuthentication>>);
+    await login('alice');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).dpopPublicKey).toMatchObject({ kty: 'EC', crv: 'P-256' });
+    expect(fetchMock.mock.calls[0][1].headers.DPoP).toBeUndefined();
+    reply({ devices: [] }); reply({ devices: [] });
+    await request('/devices/list'); await request('/devices/list');
+    expect(fetchMock.mock.calls[2][1].headers.DPoP).not.toBe(fetchMock.mock.calls[3][1].headers.DPoP);
+    expect(createProof).toHaveBeenCalledWith('GET', '/api/devices/list');
+  });
+  it('resumes the identical sensitive request once after step-up, with a fresh proof', async () => {
+    const original = { credentialId: 'device-2' };
+    reply({ error: 'STEP_UP_REQUIRED', intentId: 'intent-1', stepUpOptions: { challenge: 'stepup' } }, 403);
+    reply({ success: true, stepUpToken: 'single-use' }); reply({ success: true });
+    vi.mocked(startAuthentication).mockResolvedValueOnce({ id: 'assertion' } as Awaited<ReturnType<typeof startAuthentication>>);
+    await request('/devices/revoke', original);
+    expect(fetchMock.mock.calls[0][1].body).toBe(fetchMock.mock.calls[2][1].body);
+    expect(fetchMock.mock.calls[2][1].headers['X-Step-Up-Token']).toBe('single-use');
+    expect(fetchMock.mock.calls[0][1].headers.DPoP).not.toBe(fetchMock.mock.calls[2][1].headers.DPoP);
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/auth/step-up-verify');
+  });
+  it('does not repeat a failed business operation using a consumed token', async () => {
+    reply({ error: 'STEP_UP_REQUIRED', intentId: 'intent', stepUpOptions: {} }, 403);
+    reply({ success: true, stepUpToken: 'single-use' }); reply({ error: 'Business validation failed' }, 400);
+    vi.mocked(startAuthentication).mockResolvedValueOnce({ id: 'assertion' } as Awaited<ReturnType<typeof startAuthentication>>);
+    await expect(request('/devices/revoke', { credentialId: 'missing' })).rejects.toMatchObject({ status: 400 });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+  it('uses the separate step-up challenge endpoint when middleware returns only an intent hash', async () => {
+    reply({ error: 'STEP_UP_REQUIRED', intentHash: 'body-hash' }, 403);
+    reply({ intentId: 'intent', stepUpOptions: {} }); reply({ success: true, stepUpToken: 'token' }); reply({ success: true });
+    vi.mocked(startAuthentication).mockResolvedValueOnce({ id: 'assertion' } as Awaited<ReturnType<typeof startAuthentication>>);
+    await request('/devices/revoke', { credentialId: 'device' });
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/auth/step-up-challenge');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ method: 'POST', route: '/api/devices/revoke', body: { credentialId: 'device' }, intentHash: 'body-hash' });
+  });
+  it('does not complete recovery when replacement enrollment is cancelled', async () => {
+    reply({ success: true, recoveryTicket: 'ticket', registrationOptions: { challenge: 'replacement' }, expiresAt: Date.now() + 300000 });
+    const ticket = await verifyRecovery('alice', 'code');
+    vi.mocked(startRegistration).mockRejectedValueOnce(new DOMException('cancelled', 'NotAllowedError'));
+    await expect(completeRecovery('alice', ticket)).rejects.toMatchObject({ name: 'NotAllowedError' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/recovery/verify-code');
+  });
+  it('clears the rendered session on protected 401 and never exposes server exceptions', async () => {
+    reply({ error: 'DPOP_PROOF_REQUIRED', detail: 'SQL private details' }, 401);
+    await expect(request('/devices/list')).rejects.toMatchObject({ status: 401 });
+    expect(window.dispatchEvent).toHaveBeenCalled();
+    expect(friendlyError(new ApiError(401, 'SQL private details'))).not.toContain('SQL');
+  });
+  it('rejects malformed and duplicate evidence instead of showing false pass counts', () => {
+    const report = { runId: 'run', timestamp: new Date().toISOString(), probes: [{ id: '1', name: 'Origin test', status: 'PASS' as const, detail: 'server result' }] };
+    expect(validateAttackReport(report)).toBe(report);
+    expect(() => validateAttackReport({ ...report, probes: [...report.probes, ...report.probes] })).toThrow();
+    expect(() => validateAttackReport({ ...report, probes: [] })).toThrow();
   });
 });
 

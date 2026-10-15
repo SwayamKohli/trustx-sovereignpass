@@ -40,3 +40,31 @@ dialog::backdrop { background: #102e35aa; }
 .skip { position: absolute; left: 12px; top: -100px; background: white; padding: 12px; z-index: 10; }
 .skip:focus { top: 12px; }
 @media (max-width: 480px) { .codes { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } main { margin-top: 0; } }
+.workspace { max-width: 1280px; }
+.workspace .card { padding: clamp(16px, 3vw, 36px); }
+.section-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin: 20px 0; }
+.panel { border-top: 1px solid #ccd8d4; margin-top: 32px; padding-top: 20px; }
+.table-scroll { overflow-x: auto; max-width: 100%; margin: 20px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; }
+caption { text-align: left; font-weight: 600; padding: 12px 0; }
+th, td { padding: 14px 12px; border-bottom: 1px solid #ccd8d4; vertical-align: top; }
+th { background: #edf3f0; }
+td small { display: block; max-width: 260px; overflow-wrap: anywhere; }
+.identifier { overflow-wrap: anywhere; max-width: 250px; font-family: monospace; }
+.badge { display: inline-block; padding: 3px 9px; border-radius: 8px; background: #edf3f0; color: #294c43; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.badge.revoked, .badge.fail { background: #fff0ef; color: #922424; }
+.badge.skipped { background: #fff0ce; color: #664000; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 24px 0; }
+.stats > div { padding: 20px; background: #edf3f0; border-radius: 12px; }
+.stats span { display: block; }
+.stats strong { display: block; font-size: 32px; }
+.audit-feed, .probe-list { list-style: none; padding: 0; }
+.audit-feed li, .probe-list li { border-left: 3px solid #657f79; padding: 12px 16px; margin: 16px 0; background: #f4f7f5; }
+.probe-list strong { margin-left: 12px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+summary { cursor: pointer; text-decoration: underline; }
+time { font-size: 13px; overflow-wrap: anywhere; }
+.qr { display: block; margin: 20px auto; max-width: 100%; }
+.confirmation-code { font-size: 44px; letter-spacing: 8px; font-weight: 800; text-align: center; }
+.kiosk-launch { margin-top: 24px; width: 100%; }
+dialog button { margin: 8px 8px 0 0; }
