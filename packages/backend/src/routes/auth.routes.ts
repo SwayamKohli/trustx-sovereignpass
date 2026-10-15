@@ -251,6 +251,7 @@ router.post('/login-challenge', async (req: Request, res: Response) => {
  * Verifies signed assertion, updates counter, creates session, sets HttpOnly cookie
  */
 router.post('/login-verify', async (req: Request, res: Response) => {
+  let storedUserId: string | null = null;
   try {
     const { username, assertionResponse } = req.body;
     if (!username || !assertionResponse) {
@@ -264,6 +265,7 @@ router.post('/login-verify', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Authentication challenge expired or not found' });
     }
 
+    storedUserId = stored.userId;
     challengeStore.delete(cleanUsername);
 
     const credentialId = assertionResponse.id;
@@ -363,6 +365,21 @@ router.post('/login-verify', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('[WebAuthn] login-verify error:', err);
+    const isOriginMismatch = err.message && (err.message.includes('origin') || err.message.includes('Origin'));
+    try {
+      db.prepare(`
+        INSERT INTO audit_events (id, type, user_id, detail, timestamp)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        `aud_${crypto.randomBytes(8).toString('hex')}`,
+        isOriginMismatch ? 'PHISHING_ORIGIN_REJECTED' : 'AUTH_VERIFY_FAILED',
+        storedUserId,
+        JSON.stringify({ error: err.message, ip: req.ip || '127.0.0.1' }),
+        new Date().toISOString()
+      );
+    } catch {
+      // Ignore database logging errors in catch block
+    }
     return res.status(401).json({ error: err.message || 'Authentication failed' });
   }
 });

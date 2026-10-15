@@ -13,7 +13,9 @@
     "dev:frontend:mock": "npm run dev:mock --workspace=@trustx/frontend",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
-    "test:attacks": "ts-node tests/test_attacks.ts",
+    "test:attacks": "npm run test:attacks --workspace=@trustx/backend",
+    "dev:phishing": "npm run dev:phishing --workspace=@trustx/backend",
+    "audit:export": "npm run audit:export --workspace=@trustx/backend",
     "benchmark:pqc": "node --no-warnings -r ts-node/register scripts/benchmarks/pqc_benchmark.ts"
   },
   "devDependencies": {

@@ -6,10 +6,13 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:phishing": "tsx src/phishing-server.ts",
     "build": "tsc",
     "test": "ts-node test/services.test.ts",
-    "start": "node dist/server.js",
-    "test:challenges": "tsx src/scripts/test-challenges.ts"
+    "test:attacks": "tsx test/test_attacks.ts",
+    "test:challenges": "tsx src/scripts/test-challenges.ts",
+    "audit:export": "tsx src/scripts/export-audit-log.ts",
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.1.1",
