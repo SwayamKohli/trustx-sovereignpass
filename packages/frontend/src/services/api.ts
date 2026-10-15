@@ -47,11 +47,14 @@ export async function request<T>(path: string, body?: unknown, protectedRequest 
 }
 export function friendlyError(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.status === 429) return 'Too many attempts. Please wait before trying again.';
     if (error.status === 401) return 'Your session or passkey could not be verified. Please sign in again.';
+    if (error.status === 429) return 'Too many attempts. Please wait before trying again.';
     if (error.status === 403) return 'Permission or fresh passkey approval is required. Please try again.';
-    if (error.status === 404) return 'This service is not available on the connected backend yet.';
-    if (error.status === 400) return 'The request is invalid, expired, or already used. Check your details and try again.';
+    if (error.status === 404) {
+      if (error.code && error.code.toLowerCase().includes('user')) return 'Username not registered. Please create an account first.';
+      return 'This service is not available on the connected backend yet.';
+    }
+    if (error.status === 400) return error.code || 'The request is invalid, expired, or already used. Check your details and try again.';
     return 'The service is unavailable. Please try again later.';
   }
   if (error instanceof Error && ['NotAllowedError', 'AbortError'].includes(error.name)) return 'The passkey prompt was cancelled or timed out. You can try again.';

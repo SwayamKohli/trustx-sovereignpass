@@ -54,6 +54,22 @@ function generateRecoveryCodes(count: number = 8): string[] {
   return codes;
 }
 
+export function getEffectiveRpID(req: Request): string {
+  if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
+    return req.hostname;
+  }
+  return rpID;
+}
+
+export function getEffectiveOrigin(req: Request): string {
+  if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
+    const protocol = req.secure ? 'https' : 'http';
+    const host = req.get('host') || `${req.hostname}:3000`;
+    return `${protocol}://${host}`;
+  }
+  return origin;
+}
+
 /**
  * POST /api/auth/register-challenge
  * Initiates registration by returning WebAuthn PublicKeyCredentialCreationOptions
@@ -76,14 +92,19 @@ router.post('/register-challenge', async (req: Request, res: Response) => {
     const userId = `usr_${crypto.randomBytes(8).toString('hex')}`;
     const userBuffer = Buffer.from(userId);
 
+    const effectiveRpID = getEffectiveRpID(req);
     const options = await generateRegistrationOptions({
       rpName,
-      rpID,
+      rpID: effectiveRpID,
       userID: new Uint8Array(userBuffer),
       userName: cleanUsername,
       userDisplayName: cleanUsername,
       attestationType: 'none',
       timeout: 60000,
+      authenticatorSelection: {
+        residentKey: 'preferred',
+        userVerification: 'preferred',
+      },
     });
 
     challengeStore.set(cleanUsername, {
@@ -120,11 +141,14 @@ router.post('/register-verify', async (req: Request, res: Response) => {
 
     challengeStore.delete(cleanUsername);
 
+    const effectiveOrigin = getEffectiveOrigin(req);
+    const effectiveRpID = getEffectiveRpID(req);
+
     const verification = await verifyRegistrationResponse({
       response: attestationResponse as RegistrationResponseJSON,
       expectedChallenge: stored.challenge,
-      expectedOrigin: origin,
-      expectedRPID: rpID,
+      expectedOrigin: effectiveOrigin,
+      expectedRPID: effectiveRpID,
       requireUserVerification: false,
     });
 
@@ -228,10 +252,12 @@ router.post('/login-challenge', async (req: Request, res: Response) => {
       transports: cred.transports ? JSON.parse(cred.transports) : undefined,
     }));
 
+    const effectiveRpID = getEffectiveRpID(req);
     const options = await generateAuthenticationOptions({
-      rpID,
+      rpID: effectiveRpID,
       allowCredentials,
       timeout: 60000,
+      userVerification: 'preferred',
     });
 
     challengeStore.set(cleanUsername, {
@@ -281,11 +307,14 @@ router.post('/login-verify', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Authentication failed: credential not found or revoked' });
     }
 
+    const effectiveOrigin = getEffectiveOrigin(req);
+    const effectiveRpID = getEffectiveRpID(req);
+
     const verification = await verifyAuthenticationResponse({
       response: assertionResponse as AuthenticationResponseJSON,
       expectedChallenge: stored.challenge,
-      expectedOrigin: origin,
-      expectedRPID: rpID,
+      expectedOrigin: effectiveOrigin,
+      expectedRPID: effectiveRpID,
       credential: {
         id: cred.id,
         publicKey: new Uint8Array(cred.public_key),
@@ -422,14 +451,16 @@ router.post('/step-up-challenge', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No active authenticators enrolled for step-up' });
     }
 
+    const effectiveRpID = getEffectiveRpID(req);
     const options = await generateAuthenticationOptions({
-      rpID,
+      rpID: effectiveRpID,
       allowCredentials: credentials.map((c) => ({
         id: c.id,
         type: 'public-key' as const,
         transports: c.transports ? JSON.parse(c.transports) : undefined,
       })),
       timeout: 60000,
+      userVerification: 'preferred',
     });
 
     challengeStore.set(`stepup_${session.id}`, {
@@ -478,11 +509,14 @@ router.post('/step-up-verify', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Credential not found or revoked' });
     }
 
+    const effectiveOrigin = getEffectiveOrigin(req);
+    const effectiveRpID = getEffectiveRpID(req);
+
     const verification = await verifyAuthenticationResponse({
       response: assertionResponse as AuthenticationResponseJSON,
       expectedChallenge: stored.challenge,
-      expectedOrigin: origin,
-      expectedRPID: rpID,
+      expectedOrigin: effectiveOrigin,
+      expectedRPID: effectiveRpID,
       credential: {
         id: cred.id,
         publicKey: new Uint8Array(cred.public_key),

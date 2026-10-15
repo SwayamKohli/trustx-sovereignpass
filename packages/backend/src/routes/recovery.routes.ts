@@ -10,7 +10,8 @@ import {
   RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import { db } from '../db/index';
-import { rpName, rpID, origin } from '../webauthn/config';
+import { rpName } from '../webauthn/config';
+import { getEffectiveRpID, getEffectiveOrigin } from './auth.routes';
 import type { User, RecoveryCode, PendingRecovery } from '../db/schema';
 
 const router = Router();
@@ -124,9 +125,10 @@ router.post('/verify-code', async (req: Request, res: Response) => {
     const userBuffer = Buffer.from(user.id);
     const expiresAt = Math.floor(Date.now() / 1000) + 300; // 5-minute validity window
 
+    const effectiveRpID = getEffectiveRpID(req);
     const registrationOptions = await generateRegistrationOptions({
       rpName,
-      rpID,
+      rpID: effectiveRpID,
       userID: new Uint8Array(userBuffer),
       userName: cleanUsername,
       userDisplayName: cleanUsername,
@@ -196,12 +198,14 @@ router.post('/complete', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid or expired recovery ticket' });
     }
 
-    // Verify attestation against the replacement challenge staged in Phase 1
+    const effectiveOrigin = getEffectiveOrigin(req);
+    const effectiveRpID = getEffectiveRpID(req);
+
     const verification = await verifyRegistrationResponse({
       response: attestationResponse as RegistrationResponseJSON,
       expectedChallenge: pending.replacement_registration_challenge,
-      expectedOrigin: origin,
-      expectedRPID: rpID,
+      expectedOrigin: effectiveOrigin,
+      expectedRPID: effectiveRpID,
       requireUserVerification: false,
     });
 

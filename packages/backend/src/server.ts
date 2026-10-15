@@ -21,7 +21,16 @@ const app = express();
 initDb();
 
 // Base middleware
-app.use(cors({ origin: serverConfig.expectedOrigin, credentials: true }));
+app.use(cors({
+  origin: (requestOrigin, callback) => {
+    if (!requestOrigin || requestOrigin.includes('bank.local') || requestOrigin.includes('localhost') || requestOrigin.includes('127.0.0.1')) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+}));
 app.use(cookieParser());
 
 // Healthcheck endpoint (supports both /health and /api/health)

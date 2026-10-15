@@ -10,7 +10,8 @@ import {
 } from '@simplewebauthn/server';
 import { db } from '../db/index';
 import { requireSession } from '../middleware/session.middleware';
-import { rpName, rpID, origin } from '../webauthn/config';
+import { rpName } from '../webauthn/config';
+import { getEffectiveRpID, getEffectiveOrigin } from './auth.routes';
 import type { Credential } from '../db/schema';
 
 const router = Router();
@@ -61,9 +62,10 @@ router.post('/register-challenge', requireSession, async (req: Request, res: Res
       transports: c.transports ? JSON.parse(c.transports) : undefined,
     }));
 
+    const effectiveRpID = getEffectiveRpID(req);
     const options = await generateRegistrationOptions({
       rpName,
-      rpID,
+      rpID: effectiveRpID,
       userID: new Uint8Array(userBuffer),
       userName: user.username,
       userDisplayName: user.username,
@@ -104,11 +106,14 @@ router.post('/register-verify', requireSession, async (req: Request, res: Respon
 
     deviceChallenges.delete(user.id);
 
+    const effectiveOrigin = getEffectiveOrigin(req);
+    const effectiveRpID = getEffectiveRpID(req);
+
     const verification = await verifyRegistrationResponse({
       response: attestationResponse as RegistrationResponseJSON,
       expectedChallenge: stored.challenge,
-      expectedOrigin: origin,
-      expectedRPID: rpID,
+      expectedOrigin: effectiveOrigin,
+      expectedRPID: effectiveRpID,
       requireUserVerification: false,
     });
 
