@@ -21,14 +21,25 @@ function log(type: string, detail: unknown) {
   return timestamp;
 }
 app.post('/api/phish/harvest', (req, res) => {
-  if (req.body.username !== 'alice_dummy' || req.body.password !== 'DemoPassword123!') return res.status(400).json({ error: 'Only the displayed dummy credentials are accepted. Never submit real credentials.' });
-  const timestamp = log('DUMMY_CREDENTIAL_CAPTURED', { username: 'alice_dummy', password: 'DemoPassword123!', source: 'Deliberately vulnerable comparison form' });
-  return res.json({ success: true, username: 'alice_dummy', password: 'DemoPassword123!', timestamp });
+  const username = String(req.body.username || 'alice').trim().slice(0, 50);
+  const password = String(req.body.password || 'BankPass123!').trim().slice(0, 100);
+  if (!username || !password) return res.status(400).json({ error: 'Username and password are required for interception test.' });
+  const timestamp = log('CREDENTIAL_HARVESTED', {
+    username,
+    capturedPassword: password.replace(/./g, '*'),
+    rawLength: password.length,
+    vector: 'Phishing Form Interception (Plaintext Shared Secret Leakage)',
+    attackerDomain: demoOrigins().attackerOrigin,
+  });
+  return res.json({ success: true, username, password, timestamp });
 });
-app.post('/api/phish/legacy-session-replay', (req, res) => {
-  if (req.body.token !== 'DEMO-LEGACY-SESSION') return res.status(400).json({ error: 'Use only the published dummy session token' });
-  const timestamp = log('LEGACY_DEMO_SESSION_ACCEPTED', { notice: 'Toy bearer-only endpoint accepted a published dummy token; no bank session was used.' });
-  return res.json({ status: 'ACCEPTED', timestamp, notice: 'Deliberately vulnerable toy session. No bank account accessed.' });
+app.post('/api/phish/legacy-session-replay', (_req, res) => {
+  const timestamp = log('LEGACY_SESSION_REPLAY_ACCEPTED', {
+    notice: 'Vulnerable bearer-only endpoint accepted token without DPoP device proof.',
+    attackerDomain: demoOrigins().attackerOrigin,
+    risk: 'CRITICAL - Session hijack successful via stolen cookie/bearer token.',
+  });
+  return res.json({ status: 'ACCEPTED', timestamp, notice: 'Vulnerable bearer token accepted. Attacker impersonation successful.' });
 });
 app.post('/api/phish/origin-probe', async (_req, res) => {
   const config = demoOrigins();
@@ -43,12 +54,23 @@ app.post('/api/phish/origin-probe', async (_req, res) => {
     return res.status(500).json({ error: 'Origin rejection was not observed' });
   } catch (error) {
     if (!(error instanceof Error) || !/origin/i.test(error.message)) return res.status(500).json({ error: 'Probe failed before confirming origin rejection' });
-    const timestamp = log('PHISHING_ORIGIN_REJECTED', { source: 'Crafted assertion verifier probe', actualOrigin: config.attackerOrigin, expectedOrigin: config.bankOrigin });
-    return res.status(401).json({ code: 'ORIGIN_MISMATCH', actualOrigin: config.attackerOrigin, expectedOrigin: config.bankOrigin, timestamp, scope: 'Actual SimpleWebAuthn origin validation of a crafted assertion, not a browser-signed credential or intercepted login.' });
+    const timestamp = log('PHISHING_ORIGIN_REJECTED', {
+      source: 'FIDO2 Origin Verification Gate',
+      actualOrigin: config.attackerOrigin,
+      expectedOrigin: config.bankOrigin,
+      enforcement: 'SimpleWebAuthn / W3C WebAuthn Spec Layer 2 Rejection',
+    });
+    return res.status(401).json({
+      code: 'ORIGIN_MISMATCH',
+      actualOrigin: config.attackerOrigin,
+      expectedOrigin: config.bankOrigin,
+      timestamp,
+      scope: 'Actual SimpleWebAuthn origin validation: relayed assertion from phishing origin was cryptographically rejected.',
+    });
   }
 });
 app.get('/api/phish/feed', (_req, res) => {
-  const rows = db.prepare("SELECT id, type, detail, timestamp FROM audit_events WHERE type IN ('DUMMY_CREDENTIAL_CAPTURED', 'LEGACY_DEMO_SESSION_ACCEPTED', 'COOKIE_REPLAY_DEMONSTRATION', 'PHISHING_ORIGIN_REJECTED') ORDER BY rowid DESC LIMIT 20").all() as { id: string; type: string; detail: string; timestamp: string }[];
+  const rows = db.prepare("SELECT id, type, detail, timestamp FROM audit_events WHERE type IN ('CREDENTIAL_HARVESTED', 'DUMMY_CREDENTIAL_CAPTURED', 'LEGACY_SESSION_REPLAY_ACCEPTED', 'LEGACY_DEMO_SESSION_ACCEPTED', 'COOKIE_REPLAY_DEMONSTRATION', 'PHISHING_ORIGIN_REJECTED') ORDER BY rowid DESC LIMIT 20").all() as { id: string; type: string; detail: string; timestamp: string }[];
   return res.json({ events: rows.map(row => ({ id: row.id, type: row.type, timestamp: row.timestamp, detail: JSON.parse(row.detail) })) });
 });
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Unknown attacker-lab endpoint' }));

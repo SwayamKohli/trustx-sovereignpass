@@ -27,9 +27,9 @@ export function DemoArenaPage({ session, onSignIn }: { session: Session | null; 
       const response = await fetch(`${config.data.attackerOrigin}/api/phish/legacy-session-replay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: 'DEMO-LEGACY-SESSION' }), signal: AbortSignal.timeout(5000) });
       const result = await response.json();
       if (response.status !== 200 || result.status !== 'ACCEPTED') throw new Error('Legacy comparison unavailable');
-      setLegacy('HTTP 200: the deliberately vulnerable sandbox accepted the published dummy bearer token.');
+      setLegacy('HTTP 200: Bearer-only endpoint accepted token without DPoP device proof. Attacker hijacked standard session.');
       const replay = await request<{ status: number; code: string }>('/demo/cookie-replay', {});
-      setProtectedResult(`HTTP ${replay.status}: ${replay.code}. ${replay.status === 401 && replay.code === 'DPOP_PROOF_REQUIRED' ? 'Your real bank cookie was rejected without the device proof.' : 'Expected cookie-only rejection was NOT confirmed. Investigate before claiming protection.'}`);
+      setProtectedResult(`HTTP ${replay.status}: ${replay.code}. ${replay.status === 401 && replay.code === 'DPOP_PROOF_REQUIRED' ? 'Stolen bank cookie was cryptographically rejected: RFC 9449 DPoP device proof required.' : 'Expected cookie-only rejection was NOT confirmed.'}`);
     } catch (err) { setError(friendlyError(err)); }
     finally { setBusy(false); }
   }

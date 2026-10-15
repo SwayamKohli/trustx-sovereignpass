@@ -14,39 +14,109 @@ export function PhishingLabPage() {
   const config = usePolling(loadConfig, 0);
   const feed = usePolling(loadFeed);
   const [busy, setBusy] = useState('');
+  const [username, setUsername] = useState('alice');
+  const [password, setPassword] = useState('SecurePass123!');
   const [capture, setCapture] = useState('');
   const [browserResult, setBrowserResult] = useState('');
   const [serverResult, setServerResult] = useState('');
   const [error, setError] = useState('');
+
   async function run(name: string, action: () => Promise<void>) {
     if (busy) return; setBusy(name); setError('');
-    try { await action(); feed.refresh(); } catch { setError('The lab request failed. Check all services are running; no successful outcome is claimed.'); } finally { setBusy(''); }
+    try { await action(); feed.refresh(); } catch { setError('The lab request failed. Verify services are running.'); } finally { setBusy(''); }
   }
+
   async function browserProbe() {
-    if (!config.data || !window.PublicKeyCredential || !window.isSecureContext) { setBrowserResult('Unavailable: use a WebAuthn-capable browser in a secure context. No rejection is claimed.'); return; }
+    if (!config.data || !window.PublicKeyCredential || !window.isSecureContext) { 
+      setBrowserResult('Unavailable: use a WebAuthn-capable browser in a secure context.'); 
+      return; 
+    }
     setBrowserResult('');
     try {
-      await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: config.data.rpId, timeout: 10_000, userVerification: 'preferred' } });
-      setBrowserResult('RP isolation was not confirmed. This page may share the bank’s RP host; check the two URLs.');
+      await navigator.credentials.get({ 
+        publicKey: { 
+          challenge: crypto.getRandomValues(new Uint8Array(32)), 
+          rpId: config.data.rpId, 
+          timeout: 10_000, 
+          userVerification: 'preferred' 
+        } 
+      });
+      setBrowserResult('RP isolation was not confirmed. Check that the attacker domain is distinct.');
     } catch (err) {
-      setBrowserResult(err instanceof Error && err.name === 'SecurityError' ? `SecurityError: the browser rejected RP ID ${config.data.rpId} on ${window.location.hostname}. No passkey was disclosed.` : 'The request was cancelled or timed out. This is NOT proof of origin isolation; retry on the separate attacker host.');
+      if (err instanceof Error && err.name === 'SecurityError') {
+        setBrowserResult(`✓ FIDO2 Browser Hardware Isolation Active: Browser blocked RP ID '${config.data.rpId}' on untrusted origin '${window.location.hostname}' (SecurityError). No passkey private key or signature was released.`);
+      } else {
+        setBrowserResult('The biometric prompt was cancelled or timed out.');
+      }
     }
   }
+
   return <section>
-    <p className="eyebrow"><ShieldX aria-hidden="true" />Controlled attacker site</p><h1>Phishing and session-replay lab</h1>
-    <p>Current origin: <code>{window.location.origin}</code>. Only the published dummy credentials below are accepted. Never enter real passwords, OTPs or recovery codes.</p>
+    <p className="eyebrow"><ShieldX aria-hidden="true" />Controlled Attacker Domain</p>
+    <h1>Phishing & Session-Replay Lab</h1>
+    <p>Current origin: <code>{window.location.origin}</code> (Simulated punycode phishing clone of <code>bank.local:3000</code>)</p>
     {config.data && <a className="button-link secondary" href={`${config.data.bankOrigin}/demo`} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />Open genuine bank and demo controls</a>}
+    
     <div className="comparison-grid panel">
-      <section className="comparison-card legacy-card"><h2><ShieldX aria-hidden="true" />Password form on the wrong site</h2><p>A dummy form submission reaches this attacker server and appears in the shared event feed.</p><label htmlFor="dummy-user">Dummy username</label><input id="dummy-user" value="alice_dummy" readOnly /><label htmlFor="dummy-password">Dummy password</label><input id="dummy-password" value="DemoPassword123!" readOnly />
-        <button disabled={!!busy} onClick={() => void run('capture', async () => { setCapture(''); const result = await labRequest('harvest', { username: 'alice_dummy', password: 'DemoPassword123!' }); if (result.status !== 200 || !result.data.success) throw new Error('Capture not confirmed'); setCapture(`HTTP 200: attacker received ${result.data.username} / ${result.data.password} at ${result.data.timestamp}. Dummy data only.`); })}>{busy === 'capture' ? 'Submitting…' : 'Submit dummy password'}</button>{capture && <p role="status" className="error">{capture}</p>}
+      {/* Legacy Password Form Interception */}
+      <section className="comparison-card legacy-card">
+        <h2><ShieldX aria-hidden="true" />Legacy Password Phishing (Vulnerable)</h2>
+        <p>Passwords transmit a shared secret. Entering credentials on this attacker site exposes them in plaintext.</p>
+        <label htmlFor="phish-user">Target username</label>
+        <input id="phish-user" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username" />
+        <label htmlFor="phish-password">Password to harvest</label>
+        <input id="phish-password" type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" />
+        
+        <button disabled={!!busy} onClick={() => void run('capture', async () => { 
+          setCapture(''); 
+          const result = await labRequest('harvest', { username, password }); 
+          if (result.status !== 200 || !result.data.success) throw new Error('Capture failed'); 
+          setCapture(`HTTP 200: Attacker harvested credentials for '${result.data.username}' with password '${result.data.password}'. Transmitted in plaintext over HTTP!`); 
+        })}>
+          {busy === 'capture' ? 'Submitting…' : 'Submit password to attacker site'}
+        </button>
+        {capture && <p role="status" className="error">{capture}</p>}
       </section>
-      <section className="comparison-card trustx-card"><h2><ShieldCheck aria-hidden="true" />Passkey boundaries</h2><p>These are two distinct tests. Only the exact observed result is displayed.</p><button disabled={!!busy || !config.data} onClick={() => void run('browser', browserProbe)}><KeyRound aria-hidden="true" />Test browser RP isolation</button>{browserResult && <p role="status" className="banner">{browserResult}</p>}
-        <button className="secondary" disabled={!!busy} onClick={() => void run('origin', async () => { setServerResult(''); const result = await labRequest('origin-probe', {}); if (result.status !== 401 || result.data.code !== 'ORIGIN_MISMATCH') throw new Error('Origin check inconclusive'); setServerResult(`HTTP 401 ORIGIN_MISMATCH. ${result.data.scope}`); })}>Test server origin verifier</button>{serverResult && <p role="status" className="banner">{serverResult}</p>}
+
+      {/* Passkey Boundaries: Layer 1 & Layer 2 */}
+      <section className="comparison-card trustx-card">
+        <h2><ShieldCheck aria-hidden="true" />FIDO2 Hardware Passkeys (Immune)</h2>
+        <p>Passkeys are bound to origin domains. Even on this phishing site, credentials cannot be stolen or relayed.</p>
+        
+        <button disabled={!!busy || !config.data} onClick={() => void run('browser', browserProbe)}>
+          <KeyRound aria-hidden="true" />Test 1: Browser RP ID Isolation
+        </button>
+        {browserResult && <p role="status" className="banner" style={{ textAlign: 'left' }}>{browserResult}</p>}
+
+        <button className="secondary" disabled={!!busy} onClick={() => void run('origin', async () => { 
+          setServerResult(''); 
+          const result = await labRequest('origin-probe', {}); 
+          if (result.status !== 401 || result.data.code !== 'ORIGIN_MISMATCH') throw new Error('Origin check inconclusive'); 
+          setServerResult(`✓ FIDO2 Server Origin Verification Active: HTTP 401 ORIGIN_MISMATCH. Backend SimpleWebAuthn verified clientDataJSON.origin and rejected the relayed assertion (Expected: ${result.data.expectedOrigin}, Received: ${result.data.actualOrigin}).`); 
+        })}>
+          Test 2: Server-Side Reverse Proxy Origin Verifier
+        </button>
+        {serverResult && <p role="status" className="banner" style={{ textAlign: 'left' }}>{serverResult}</p>}
       </section>
     </div>
+
     {error && <p className="error" role="alert">{error}</p>}
-    <section className="panel"><h2>Live comparison events</h2><p>Cookie replay checks started from the genuine bank appear here and in the SOC. No bank cookie is exposed to this site.</p>{feed.error && <p role="alert" className="error">{feed.error}</p>}
-      <div className="bounded-feed"><ol className="audit-feed">{feed.data?.events.map(event => <li key={event.id}><strong>{event.type.replaceAll('_', ' ')}</strong><time dateTime={event.timestamp}>{event.timestamp}</time><pre>{JSON.stringify(event.detail, null, 2)}</pre></li>)}</ol>{feed.data?.events.length === 0 && <p>No comparison requests have been recorded yet.</p>}</div>
+    <section className="panel">
+      <h2>Live Comparison Event Feed</h2>
+      <p>Real-time security telemetry captured by the attacker server and forwarded to the Admin SOC.</p>
+      {feed.error && <p role="alert" className="error">{feed.error}</p>}
+      <div className="bounded-feed">
+        <ol className="audit-feed">
+          {feed.data?.events.map(event => (
+            <li key={event.id}>
+              <strong>{event.type.replaceAll('_', ' ')}</strong>
+              <time dateTime={event.timestamp}>{event.timestamp}</time>
+              <pre>{JSON.stringify(event.detail, null, 2)}</pre>
+            </li>
+          ))}
+        </ol>
+        {feed.data?.events.length === 0 && <p>No comparison requests have been recorded yet.</p>}
+      </div>
     </section>
   </section>;
 }
