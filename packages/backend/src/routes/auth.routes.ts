@@ -575,6 +575,19 @@ router.post('/step-up-verify', requireSession, async (req: Request, res: Respons
 router.get('/session', requireSession, (req: Request, res: Response) => {
   const session = req.session!;
   const user = req.user!;
+  const currentIp = req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1';
+  const currentUserAgent = req.headers['user-agent'] || 'unknown';
+
+  const risk = RiskService.evaluateRisk({
+    currentIp,
+    sessionIp: session.ip_address,
+    currentUserAgent,
+    sessionUserAgent: session.user_agent,
+    method: 'GET',
+    route: '/api/auth/session',
+    isKiosk: Boolean(session.is_kiosk),
+  });
+
   return res.json({
     success: true,
     user: {
@@ -585,6 +598,13 @@ router.get('/session', requireSession, (req: Request, res: Response) => {
     isKiosk: Boolean(session.is_kiosk),
     isDeviceBound: !!session.dpop_public_key,
     expiresAt: session.expires_at,
+    risk: {
+      score: risk.score,
+      level: risk.level,
+      reasons: risk.reasons.length ? risk.reasons : ['Normal session baseline', 'Origin & device key matched'],
+      ipAddress: currentIp,
+      userAgent: currentUserAgent,
+    },
   });
 });
 

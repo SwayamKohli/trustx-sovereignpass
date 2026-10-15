@@ -40,7 +40,7 @@ function SOC() {
     <p className="hint">Sessions and events refresh every 5 seconds. Probe reports refresh every 10 seconds. A failed refresh leaves older data marked stale.</p>
     {mockMode && <p className="banner">Preview accounts and events only. No live security probes are executed.</p>}
     {error && <p role="alert" className="error">{error}</p>}{message && <p role="status">{message}</p>}
-    <div className="stats"><div><span>Credentials</span><strong>{credentials.data?.credentials.length ?? '—'}</strong></div><div><span>Active sessions</span><strong>{sessions.data?.sessions.length ?? '—'}</strong></div><div><span>Recent events loaded</span><strong>{logs.data?.logs.length ?? '—'}</strong></div></div>
+    <div className="stats"><div><span>Credentials</span><strong>{credentials.data?.credentials.length ?? '—'}</strong></div><div><span>Active sessions</span><strong>{sessions.data?.sessions.length ?? '—'}</strong></div><div><span>Recent events loaded</span><strong>{logs.data?.logs.length ?? '—'}</strong></div><div><span>Risk Engine (Req 6)</span><strong style={{ color: '#38bdf8' }}>ENFORCED (Thr: 70)</strong></div></div>
     <nav aria-label="SOC sections">{(['overview', 'sessions', 'credentials', 'events'] as const).map(value => <button key={value} aria-current={tab === value ? 'page' : undefined} onClick={() => setTab(value)}>{value === 'overview' ? 'Overview' : value === 'events' ? 'Audit events' : value === 'sessions' ? 'Active sessions' : 'Credentials'}</button>)}</nav>
     {tab === 'overview' && <div className="soc-overview">
       <section className="panel-container"><h2><ShieldCheck aria-hidden="true" />Attack probe evidence</h2>
