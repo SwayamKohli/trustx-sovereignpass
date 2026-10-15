@@ -2,6 +2,7 @@
 // Owner: Ananya (Role 2 — Product, UI/UX & Admin SOC Lead)
 import { useEffect, useRef, useState } from 'react';
 import { mockMode } from '../services/api';
+import { containDialogFocus } from './Dialog';
 export function RecoveryModal({ codes, onSaved }: { codes: string[]; onSaved: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [saved, setSaved] = useState(false);
@@ -17,7 +18,7 @@ export function RecoveryModal({ codes, onSaved }: { codes: string[]; onSaved: ()
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setMessage('Download requested. Check the file before continuing.');
   }
-  return <dialog ref={dialog} aria-labelledby="recovery-title" onCancel={event => event.preventDefault()}>
+  return <dialog ref={dialog} aria-labelledby="recovery-title" onKeyDown={containDialogFocus} onCancel={event => event.preventDefault()}>
     <p className="eyebrow">Account created</p><h2 id="recovery-title">Save your emergency codes</h2>
     <p>Each code can recover your account once. Keep these private and separate from your device. They will not be shown again.</p>
     {mockMode && <p className="banner">Demo codes only — these cannot recover a real account.</p>}

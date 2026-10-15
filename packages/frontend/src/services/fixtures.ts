@@ -1,6 +1,5 @@
 // Illustrative UI fixtures only; never evidence of a live security result.
-export type Device = { id: string; name: string; status: 'ACTIVE' | 'REVOKED'; lastUsed: string };
-export type AuditEvent = { id: string; timestamp: string; eventType: string; userId: string; ipAddress: string; details: Record<string, unknown> };
+import type { Device, AuditEvent } from './types';
 export const deviceFixture: { devices: Device[] } = {
   devices: [{ id: 'demo-credential', name: 'Demo laptop', status: 'ACTIVE', lastUsed: '2026-10-14T08:30:00Z' }],
 };
