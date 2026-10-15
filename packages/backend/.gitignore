@@ -1,0 +1,14 @@
+# Dependencies
+node_modules
+
+# Build Output
+dist
+
+# Database Files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.*
