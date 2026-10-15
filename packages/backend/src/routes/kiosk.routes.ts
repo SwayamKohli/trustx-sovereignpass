@@ -326,14 +326,17 @@ router.post('/qr-poll', (req: Request, res: Response) => {
         maxAge: 15 * 60 * 1000,
       });
 
-      const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(kiosk.user_id) as User;
+      const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(kiosk.user_id) as User;
 
       return res.json({
         status: 'AUTHORIZED',
         user: {
           id: user.id,
           username: user.username,
+          role: user.role || 'USER',
         },
+        isKiosk: true,
+        expiresAt: ephemeralExpiryMs,
       });
     }
 

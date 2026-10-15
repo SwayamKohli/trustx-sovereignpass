@@ -16,6 +16,7 @@ import { db } from '../db/index';
 import { rpName, rpID, origin } from '../webauthn/config';
 import { RiskService } from '../services/risk.service';
 import type { User, Credential, Session } from '../db/schema';
+import { requireSession } from '../middleware/session.middleware';
 
 const router = Router();
 
@@ -369,6 +370,8 @@ router.post('/login-verify', async (req: Request, res: Response) => {
         username: user.username,
         role: user.role,
       },
+      isKiosk: false,
+      expiresAt,
     });
   } catch (err: any) {
     console.error('[WebAuthn] login-verify error:', err);
@@ -522,6 +525,44 @@ router.post('/step-up-verify', async (req: Request, res: Response) => {
     console.error('[WebAuthn] step-up-verify error:', err);
     return res.status(401).json({ error: err.message || 'Step-up verification failed' });
   }
+});
+
+/**
+ * GET /api/auth/session
+ * Returns the currently active authenticated session context (protected by requireSession & DPoP)
+ */
+router.get('/session', requireSession, (req: Request, res: Response) => {
+  const session = req.session!;
+  const user = req.user!;
+  return res.json({
+    success: true,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+    },
+    isKiosk: Boolean(session.is_kiosk),
+    expiresAt: session.expires_at,
+  });
+});
+
+/**
+ * POST /api/auth/logout
+ * Destroys session record in SQLite and clears the session cookie
+ */
+router.post('/logout', (req: Request, res: Response) => {
+  const sessionId = req.cookies?.session_id || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
+  if (sessionId) {
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+  }
+  res.clearCookie('session_id', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+    path: '/',
+  });
+  return res.json({ success: true });
 });
 
 export default router;

@@ -175,7 +175,7 @@ router.post('/verify-code', async (req: Request, res: Response) => {
  */
 router.post('/complete', async (req: Request, res: Response) => {
   try {
-    const { username, recoveryTicket, attestationResponse, deviceName } = req.body;
+    const { username, recoveryTicket, attestationResponse, deviceName, dpopPublicKey } = req.body;
     if (!username || !recoveryTicket || !attestationResponse) {
       return res.status(400).json({ error: 'Missing username, recoveryTicket, or attestationResponse' });
     }
@@ -270,9 +270,15 @@ router.post('/complete', async (req: Request, res: Response) => {
       `).run(user.id);
 
       // 6. Issue fresh session for the newly enrolled replacement authenticator
+      const dpopKeyStr = dpopPublicKey
+        ? typeof dpopPublicKey === 'string'
+          ? dpopPublicKey
+          : JSON.stringify(dpopPublicKey)
+        : null;
+
       db.prepare(`
-        INSERT INTO sessions (id, user_id, credential_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+        INSERT INTO sessions (id, user_id, credential_id, created_at, expires_at, is_kiosk, ip_address, user_agent, last_active_at, dpop_public_key)
+        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
       `).run(
         sessionId,
         user.id,
@@ -281,7 +287,8 @@ router.post('/complete', async (req: Request, res: Response) => {
         sessionExpiresAt,
         ipAddress,
         userAgent,
-        nowMs
+        nowMs,
+        dpopKeyStr
       );
 
       // 7. Audit Logging
@@ -319,6 +326,8 @@ router.post('/complete', async (req: Request, res: Response) => {
         username: user.username,
         role: user.role,
       },
+      isKiosk: false,
+      expiresAt: sessionExpiresAt,
     });
   } catch (err: any) {
     console.error('[Recovery] complete error:', err);
