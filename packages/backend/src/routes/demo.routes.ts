@@ -4,9 +4,12 @@ import http from 'http';
 import crypto from 'crypto';
 import cookieParser from 'cookie-parser';
 import { requireSession } from '../middleware/session.middleware';
+import { requireStepUpAuthorization } from '../middleware/stepup.middleware';
 import deviceRoutes from './devices.routes';
 import { db } from '../db/index';
+
 const router = Router();
+
 router.post('/cookie-replay', requireSession, async (req, res) => {
   const app = express(); app.use(cookieParser()); app.use('/api/devices', deviceRoutes);
   const server = http.createServer(app);
@@ -21,4 +24,47 @@ router.post('/cookie-replay', requireSession, async (req, res) => {
   } catch { return res.status(503).json({ error: 'REPLAY_CHECK_UNAVAILABLE' }); }
   finally { if (server.listening) server.close(); }
 });
+
+router.post('/transfer', requireSession, (req, res, next) => {
+  const amount = Number(req.body.amount || 0);
+  if (amount >= 10000) {
+    return requireStepUpAuthorization({ alwaysEnforce: true })(req, res, next);
+  }
+  return next();
+}, (req, res) => {
+  const amount = Number(req.body.amount || 0);
+  const recipient = String(req.body.recipient || 'Tata Power / Electricity Board').trim();
+  const txId = `TXN-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  const timestamp = new Date().toISOString();
+  const stepUpUsed = amount >= 10000;
+
+  db.prepare('INSERT INTO audit_events (id, type, user_id, detail, timestamp) VALUES (?, ?, ?, ?, ?)').run(
+    crypto.randomUUID(),
+    'BANK_TRANSFER_COMPLETED',
+    req.user!.id,
+    JSON.stringify({
+      txId,
+      amount,
+      recipient,
+      stepUpUsed,
+      currency: 'INR',
+      method: 'Sovereign Digital Rupee / IMPS',
+      timestamp,
+    }),
+    timestamp
+  );
+
+  return res.json({
+    success: true,
+    txId,
+    amount,
+    recipient,
+    stepUpUsed,
+    timestamp,
+    message: stepUpUsed
+      ? `Biometric step-up re-authentication verified. ₹${amount.toLocaleString('en-IN')} transferred to ${recipient}.`
+      : `₹${amount.toLocaleString('en-IN')} transferred to ${recipient}. Low Risk evaluated; no step-up required.`,
+  });
+});
+
 export default router;
