@@ -31,8 +31,8 @@ flowchart TD
         AUTH["Hardware Authenticator<br/>(Touch ID / Windows Hello / YubiKey)"]
         BROWSER["Web Browser<br/>(React 18 SPA + Web Crypto IndexedDB)"]
         
-        USER <-->|Biometric Touch / PIN| AUTH
-        AUTH <-->|FIDO2 / CTAP2 Assertion| BROWSER
+        USER <-->|"Biometric Touch / PIN"| AUTH
+        AUTH <-->|"FIDO2 / CTAP2 Assertion"| BROWSER
     end
 
     subgraph DefenseGate ["2. Unified Reverse-Proxy Gateway (:3000)"]
@@ -41,7 +41,7 @@ flowchart TD
         DPOP_MW["DPoP Proof Verifier<br/>(RFC 9449 Device Binding)"]
         RISK_MW["Contextual Risk Engine<br/>(IP & Browser Anomaly Scoring)"]
         
-        BROWSER <-->|HTTPS + Ephemeral DPoP Proof| PROXY
+        BROWSER <-->|"HTTPS + Ephemeral DPoP Proof"| PROXY
         PROXY --> RP
         PROXY --> DPOP_MW
         PROXY --> RISK_MW
@@ -70,8 +70,8 @@ flowchart TD
         ATTACKER_SITE["Phishing Lab<br/>https://b4nk-secure.local:3001"]
         OLLAMA["Autonomous AI Red-Team<br/>(Local Ollama: qwen3:1.7b)"]
         
-        ATTACKER_SITE -.->|RP ID Mismatch: Rejected| AUTH
-        OLLAMA -.->|Stolen Cookie Attack: Blocked| PG
+        ATTACKER_SITE -.->|"RP ID Mismatch: Rejected"| AUTH
+        OLLAMA -.->|"Stolen Cookie Attack: Blocked"| PG
     end
 ```
 

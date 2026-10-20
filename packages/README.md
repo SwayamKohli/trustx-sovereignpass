@@ -26,19 +26,19 @@ packages/
 
 ```mermaid
 graph LR
-    subgraph Client ["Client Browser / Mobile Authenticator"]
+    subgraph Client ["Client Browser & Mobile Authenticator"]
         UI["@trustx/frontend<br/>(React 18 + Vite)"]
-        AUTH["Authenticator<br/>(Touch ID / Face ID / FIDO2 Key)"]
-        UI <-->|W3C WebAuthn API| AUTH
+        AUTH["Hardware Authenticator<br/>(Touch ID / Face ID / FIDO2)"]
+        UI <-->|"W3C WebAuthn API"| AUTH
     end
 
     subgraph Server ["Unified Reverse-Proxy Host (Express HTTPS :3000)"]
         PROXY["Reverse Proxy Router"]
         API["@trustx/backend<br/>(Express API)"]
-        VITE_DEV["Vite Dev Server (:5173 internal)"]
+        VITE_DEV["Internal Vite Server<br/>(:5173)"]
         
-        PROXY -->|/api/*| API
-        PROXY -->|/* (HTML/JS/Assets)| VITE_DEV
+        PROXY -->|"API Routes (/api)"| API
+        PROXY -->|"Client Assets"| VITE_DEV
     end
 
     subgraph DataStore ["State & Ledger Layer"]
@@ -48,10 +48,10 @@ graph LR
 
     subgraph RedTeam ["Autonomous Red-Team"]
         OLLAMA["Local LLM<br/>(Ollama: qwen3:1.7b)"]
-        API <-->|JSON Structured Plan| OLLAMA
+        API <-->|"JSON Attack Plan"| OLLAMA
     end
 
-    UI <-->|HTTPS REST + DPoP Proofs| PROXY
+    UI <-->|"HTTPS REST + DPoP Proofs"| PROXY
 ```
 
 ---
