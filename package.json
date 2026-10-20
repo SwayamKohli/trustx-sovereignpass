@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "TrustX SovereignPass: Phishing-Resistant Passwordless Authentication with Shared-Device Session Security & Constrained AI-Agent Delegation",
+  "license": "SEE LICENSE IN LICENSE",
   "workspaces": [
     "packages/*"
   ],

@@ -6,7 +6,7 @@ Base: fetched `origin/main` at `b71950e`, fast-forwarded into `cybercup-ananya`.
 
 ## Existing contracts
 
-Registration/login use Section 4.1 of TEAM_TASK_BREAKDOWN.md. Recovery uses Section 4.2; devices Section 4.3; kiosk Section 4.4; admin credentials/sessions/events Section 4.6. Return the documented camelCase JSON fields. All mutation wrappers require `success: true` before showing success. The shared client rejects malformed lists and evidence responses.
+Registration/login use Section 4.1 of [TEAM_TASK_BREAKDOWN.md](../../docs/archive/TEAM_TASK_BREAKDOWN.md). Recovery uses Section 4.2; devices Section 4.3; kiosk Section 4.4; admin credentials/sessions/events Section 4.6. Return the documented camelCase JSON fields. All mutation wrappers require `success: true` before showing success. The shared client rejects malformed lists and evidence responses.
 
 The current backend mounts auth and agent routes only. Recovery/device/kiosk/admin routes and DPoP middleware are not yet implemented/mounted. Missing endpoints produce visible unavailable states in the frontend. Mock mode is separate and never a network-failure fallback.
 

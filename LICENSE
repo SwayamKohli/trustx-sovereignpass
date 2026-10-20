@@ -1,0 +1,50 @@
+TRUSTX SOVEREIGNPASS PROPRIETARY SOURCE-AVAILABLE EVALUATION LICENSE
+
+Copyright (c) 2026 Swayam Kohli, Sanchit Mishra, Ananya Robinson, Syed Adnan Ahmed Hanfi.
+All Rights Reserved.
+
+Project: TrustX SovereignPass
+Lead Author & Corresponding Contact: Swayam Kohli (swayamkohli11489@gmail.com)
+Hackathon: CyberCup 6.0 (Problem Statement: CC6-IC04)
+
+================================================================================
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+================================================================================
+
+1. GRANT OF EVALUATION AND REVIEW RIGHTS
+Subject to the terms and conditions of this License, the authors hereby grant to 
+any person obtaining a copy of this software and associated documentation files 
+(the "Software") a non-exclusive, non-transferable, royalty-free license to:
+  a. View and inspect the source code for personal, academic, or security research
+     evaluation;
+  b. Compile and execute the Software locally in a non-production test environment
+     strictly for personal evaluation, technical benchmarking, or academic review.
+
+2. PROHIBITED USES AND RESTRICTIONS
+Without the express prior written consent of the copyright holder (Swayam Kohli),
+you MAY NOT:
+  a. Use, deploy, host, run, or integrate this Software or any derivative work in
+     any commercial, production, business, governmental, or revenue-generating
+     capacity;
+  b. Modify, adapt, alter, translate, or create derivative works based upon the
+     Software for redistribution or public deployment;
+  c. Distribute, redistribute, sell, resell, lease, sublicense, rent, assign, or
+     otherwise convey copies of the Software or any portion thereof to any third
+     party, whether in source code or binary form;
+  d. Remove, alter, or obscure any copyright notice, author attribution, or
+     proprietary legends contained in the Software.
+
+3. INQUIRIES AND COMMERCIAL LICENSING
+For inquiries, commercial licensing, production deployment permissions, or
+partnership requests, please contact:
+  Swayam Kohli
+  Email: swayamkohli11489@gmail.com
+
+4. DISCLAIMER OF WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
